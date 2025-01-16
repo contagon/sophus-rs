@@ -1,3 +1,5 @@
+use dyn_clone::DynClone;
+
 use super::evaluated_cost::IsEvaluatedCost;
 use super::residual_fn::IsResidualFn;
 use super::term::IsTerm;
@@ -18,7 +20,7 @@ extern crate alloc;
 /// Quadratic cost function of the non-linear least squares problem.
 ///
 /// This is producing an evaluated cost: Box<dyn IsCost> which is a sum of squared residuals.
-pub trait IsCostFn {
+pub trait IsCostFn: DynClone {
     /// Evaluate the cost function.
     fn eval(
         &self,
@@ -34,6 +36,8 @@ pub trait IsCostFn {
     /// get the robust kernel function
     fn robust_kernel(&self) -> Option<RobustKernel>;
 }
+
+dyn_clone::clone_trait_object!(IsCostFn);
 
 /// Generic cost function of the non-linear least squares problem.
 ///
@@ -60,11 +64,11 @@ pub struct CostFn<
 impl<
         const NUM: usize,
         const NUM_ARGS: usize,
-        GlobalConstants: 'static + Send + Sync,
-        Constants: 'static,
-        Term: IsTerm<NUM_ARGS, Constants = Constants> + 'static,
+        GlobalConstants: 'static + Send + Sync + Clone,
+        Constants: 'static + Clone,
+        Term: IsTerm<NUM_ARGS, Constants = Constants> + 'static + Clone,
         ResidualFn,
-        VarTuple: IsVarTuple<NUM_ARGS> + 'static,
+        VarTuple: IsVarTuple<NUM_ARGS> + 'static + Clone,
     > CostFn<NUM, NUM_ARGS, GlobalConstants, Constants, Term, ResidualFn, VarTuple>
 where
     ResidualFn: IsResidualFn<NUM, NUM_ARGS, GlobalConstants, VarTuple, Constants> + 'static,
@@ -104,11 +108,11 @@ where
 impl<
         const NUM: usize,
         const NUM_ARGS: usize,
-        GlobalConstants: 'static + Send + Sync,
-        Constants,
-        Term: IsTerm<NUM_ARGS, Constants = Constants>,
+        GlobalConstants: 'static + Send + Sync + Clone,
+        Constants: Clone,
+        Term: IsTerm<NUM_ARGS, Constants = Constants> + Clone,
         ResidualFn,
-        VarTuple: IsVarTuple<NUM_ARGS> + 'static,
+        VarTuple: IsVarTuple<NUM_ARGS> + 'static + Clone,
     > IsCostFn for CostFn<NUM, NUM_ARGS, GlobalConstants, Constants, Term, ResidualFn, VarTuple>
 where
     ResidualFn: IsResidualFn<NUM, NUM_ARGS, GlobalConstants, VarTuple, Constants>,
