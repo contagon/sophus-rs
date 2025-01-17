@@ -56,6 +56,12 @@ pub struct OptParams {
     pub parallelize: bool,
     /// linear solver type
     pub linear_solver: LinearSolverType,
+    /// relative error tolerance
+    pub error_tol_relative: f64,
+    /// absolute error tolerance
+    pub error_tol_absolute: f64,
+    /// error tolerance
+    pub error_tol: f64,
 }
 
 impl Default for OptParams {
@@ -65,6 +71,9 @@ impl Default for OptParams {
             initial_lm_nu: 10.0,
             parallelize: true,
             linear_solver: Default::default(),
+            error_tol_relative: 1e-6,
+            error_tol_absolute: 1e-6,
+            error_tol: 0.0,
         }
     }
 }
@@ -109,6 +118,22 @@ pub fn optimize(
         let mut new_mse = 0.0;
         for init_cost in new_costs.iter() {
             new_mse += init_cost.calc_square_error();
+        }
+
+        let mse_decrease_abs = mse - new_mse;
+        let mse_decrease_rel = mse_decrease_abs / mse;
+
+        if new_mse < params.error_tol {
+            debug!("Error is below tolerance, stopping optimization");
+            break;
+        }
+        if mse_decrease_abs < params.error_tol_absolute {
+            debug!("Error decrease is below absolute tolerance, stopping optimization");
+            break;
+        }
+        if mse_decrease_rel < params.error_tol_relative {
+            debug!("Error decrease is below relative tolerance, stopping optimization");
+            break;
         }
 
         if new_mse < mse {

@@ -178,6 +178,9 @@ impl CamCalibProblem {
                 initial_lm_nu: 1.0, // if lm prior param is tiny
                 parallelize: true,
                 linear_solver: crate::nlls::LinearSolverType::NalgebraDenseFullPiVLu,
+                error_tol_relative: 1e-6,
+                error_tol_absolute: 1e-6,
+                error_tol: 0.0,
             },
         )
         .unwrap();
@@ -244,6 +247,9 @@ impl CamCalibProblem {
                 initial_lm_nu: 1.0,
                 parallelize: true,
                 linear_solver: crate::nlls::LinearSolverType::NalgebraDenseFullPiVLu,
+                error_tol_relative: 1e-6,
+                error_tol_absolute: 1e-6,
+                error_tol: 0.0,
             },
         )
         .unwrap();

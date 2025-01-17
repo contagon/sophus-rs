@@ -150,6 +150,9 @@ impl SimpleIso3PriorProblem {
                 initial_lm_nu: EPS_F64, // if lm prior param is tiny
                 parallelize: true,
                 linear_solver: crate::nlls::LinearSolverType::NalgebraDenseFullPiVLu,
+                error_tol_relative: 1e-6,
+                error_tol_absolute: 1e-6,
+                error_tol: 0.0,
             },
         )
         .unwrap();
