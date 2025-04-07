@@ -1,469 +1,128 @@
-use sophus_autodiff::linalg::SVec;
-use sophus_autodiff::IsPoint;
+/// Box region - axis aligned bounding box
+mod box_region;
+/// Interval
+mod interval;
 
-/// Floating-point interval
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Interval {
-    /// min and max of the interval
-    pub min_max: Option<(f64, f64)>,
-}
+use sophus_autodiff::points::IsPoint;
 
-/// Integer interval
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct IInterval {
-    /// min and max of the interval
-    pub min_max: Option<(i64, i64)>,
-}
+pub use crate::region::{
+    box_region::{
+        BoxRegion,
+        NonEmptyBoxRegion,
+    },
+    interval::{
+        Interval,
+        NonEmptyInterval,
+    },
+};
 
-/// Region - n-dimensional interval
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Region<const D: usize> {
-    /// min and max of the region
-    pub min_max: Option<(SVec<f64, D>, SVec<f64, D>)>,
-}
+/// Base trait for regions.
+///
+/// A region is either an interval [a, b] in `ℝ`, or its generalization to `ℝⁿ`.
+/// Concrete implementations include [Interval], [NonEmptyInterval], [BoxRegion] and
+/// [NonEmptyBoxRegion].
+///
+/// Note that the region bounds are considered being part of the region and hence implementations
+/// of [IsRegionBase] are closed sets from a mathematical point of view.
+pub trait IsRegionBase<const D: usize, P: IsPoint<D>>: core::marker::Sized {
+    /// The general region type.
+    type Region: IsRegion<D, P>;
+    /// The non-empty flavor of the region type.
+    type NonEmptyRegion: IsNonEmptyRegion<D, P>;
 
-/// Integer Region - n-dimensional interval
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct IRegion<const D: usize> {
-    /// min and max of the region
-    pub min_max: Option<(SVec<i64, D>, SVec<i64, D>)>,
-}
-
-impl<const D: usize> IRegion<D> {
-    /// convert integer region to floating point region
-    pub fn to_region(&self) -> Region<D> {
-        if self.is_empty() {
-            return Region::empty();
-        }
-        // example: [2, 5] -> [1.5, 5.5]
-        Region::from_min_max(
-            self.min().cast() - SVec::repeat(0.5),
-            self.max().cast() + SVec::repeat(0.5),
-        )
-    }
-}
-
-/// Traits for regions
-pub trait IsRegion<const D: usize, P: IsPoint<D>>: core::marker::Sized {
-    /// create unbounded region
+    /// Create unbounded region.
     fn unbounded() -> Self;
 
-    /// create empty region
-    fn empty() -> Self;
+    /// Create region from upper and lower bounds
+    ///
+    /// Creates interval
+    ///
+    ///  * `[a, b]  if a <= b`
+    ///  * `[b, a]  if a > b`
+    fn from_bounds(bound_a: P, bound_b: P) -> Self;
 
-    /// create region from min and max values
-    fn from_min_max(min: P, max: P) -> Self;
-
-    /// create region from point
+    /// Create region from single point.
+    ///
+    /// Note that this region is considered degenerated but not empty.
     fn from_point(point: P) -> Self {
-        Self::from_min_max(point, point)
+        Self::from_bounds(point, point)
     }
 
-    /// is region empty
-    fn is_empty(&self) -> bool;
-
-    /// is region degenerated
+    /// Is region degenerated?
     ///
-    /// A region is degenerated if it is not empty and min == max
+    /// A region is degenerated if it is not empty and min == max.
     fn is_degenerated(&self) -> bool;
 
-    /// is region proper
+    /// Is region unbounded?
     ///
-    /// A region is proper if it is not empty and not degenerated
+    /// A region is unbound if it includes all points of the domain. For example,
+    /// an [Interval] is unbound if it includes all point `x` with
+    /// [f64::NEG_INFINITY] `<= x <= ` [f64::INFINITY].
+    fn is_unbounded(&self) -> bool;
+
+    /// Extend region to include the point.
+    fn extend(&mut self, point: P);
+
+    /// Clamp point to the region.
+    fn clamp_point(&self, p: P) -> P;
+
+    /// Intersect with other region.
+    fn intersect(self, other: Self) -> Self::Region;
+
+    /// Check if the region contains the point.
+    fn contains(&self, point: P) -> bool;
+
+    /// Return range of the region.
+    ///
+    /// For an interval `[a, b]`, the range is `b - a`.
+    fn range(&self) -> P;
+
+    /// Convert self to the [Self::Region] type.
+    fn to_region(self) -> Self::Region;
+
+    /// Convert self to the [Self::NonEmptyRegion] type.
+    ///
+    /// Return [None] if the region is empty.
+    fn to_non_empty_region(self) -> Option<Self::NonEmptyRegion>;
+}
+
+/// Trait for a possibly empty region.
+pub trait IsRegion<const D: usize, P: IsPoint<D>>: IsRegionBase<D, P> {
+    /// Create empty region.
+    fn empty() -> Self;
+
+    /// Return lower bound of the region or [None] if the region is empty.
+    fn try_lower(&self) -> Option<P>;
+
+    /// Return upper bound of the region or [None] if the region is empty.
+    fn try_upper(&self) -> Option<P>;
+
+    /// Center of the region, or [None] if the region is empty.
+    fn try_center(&self) -> Option<P>;
+
+    /// Is region empty?
+    fn is_empty(&self) -> bool;
+
+    /// Is region proper?
+    ///
+    /// A region is proper if it is not empty and not degenerated.
     fn is_proper(&self) -> bool {
         !self.is_empty() && !self.is_degenerated()
     }
+}
 
-    /// is region unbounded
-    fn is_unbounded(&self) -> bool;
-
-    /// extend region to include point
-    fn extend(&mut self, point: &P);
-
-    /// min of the region
+/// Trait for a non-empty region.
+pub trait IsNonEmptyRegion<const D: usize, P: IsPoint<D>>: IsRegionBase<D, P> {
+    /// Return center of the region.
     ///
-    /// panics if the region is empty
-    fn min(&self) -> P {
-        self.try_min().unwrap()
-    }
-
-    /// max of the region
-    ///
-    /// panics if the region is empty
-    fn max(&self) -> P {
-        self.try_max().unwrap()
-    }
-
-    /// return min of the region or None if the region is empty
-    fn try_min(&self) -> Option<P>;
-
-    /// return max of the region or None if the region is empty
-    fn try_max(&self) -> Option<P>;
-
-    /// clamp point to the region
-    fn clamp(&self, p: P) -> P;
-
-    /// intersect
-    fn intersect(self, other: Self) -> Self {
-        if other.is_empty() {
-            return other;
-        }
-        if self.is_empty() {
-            return self;
-        }
-
-        Self::from_min_max(self.clamp(other.min()), self.clamp(other.max()))
-    }
-
-    /// check if the region contains a point
-    fn contains(&self, p: P) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min().is_less_equal(self.min()) && p.is_less_equal(self.max())
-    }
-
-    /// range of the region
-    fn range(&self) -> P;
-
-    /// mid of the region
-    fn mid(&self) -> P;
-}
-
-impl IsRegion<1, f64> for Interval {
-    fn unbounded() -> Self {
-        Self {
-            min_max: Option::Some((f64::NEG_INFINITY, f64::INFINITY)),
-        }
-    }
-
-    fn empty() -> Self {
-        Self {
-            min_max: Option::None,
-        }
-    }
-
-    fn from_min_max(min: f64, max: f64) -> Self {
-        Self {
-            min_max: Option::Some((min, max)),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.min_max.is_none()
-    }
-
-    fn is_degenerated(&self) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min() == self.max()
-    }
-
-    fn is_unbounded(&self) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min() == f64::NEG_INFINITY && self.max() == f64::INFINITY
-    }
-
-    fn extend(&mut self, point: &f64) {
-        if self.is_empty() {
-            *self = Self::from_point(*point);
-        }
-        let (min, max) = (self.min().min(*point), self.max().max(*point));
-
-        *self = Self::from_min_max(min, max)
-    }
-
-    fn try_min(&self) -> Option<f64> {
-        Some(self.min_max?.0)
-    }
-
-    fn try_max(&self) -> Option<f64> {
-        Some(self.min_max?.1)
-    }
-
-    fn clamp(&self, p: f64) -> f64 {
-        p.clamp(self.min(), self.max())
-    }
-
-    fn range(&self) -> f64 {
-        if self.is_empty() {
-            return 0.0;
-        }
-        self.max() - self.min()
-    }
-
-    fn mid(&self) -> f64 {
-        self.min() + 0.5 * self.range()
-    }
-}
-
-impl<const D: usize> IsRegion<D, SVec<f64, D>> for Region<D> {
-    fn unbounded() -> Self {
-        let s: SVec<f64, D> = SVec::<f64, D>::smallest();
-        let l: SVec<f64, D> = SVec::<f64, D>::largest();
-        Self::from_min_max(s, l)
-    }
-
-    fn empty() -> Self {
-        Self {
-            min_max: Option::default(),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.min_max.is_none()
-    }
-
-    fn is_degenerated(&self) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min() == self.max()
-    }
-
-    fn is_unbounded(&self) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min() == SVec::<f64, D>::smallest() && self.max() == SVec::<f64, D>::largest()
-    }
-
-    fn from_min_max(min: SVec<f64, D>, max: SVec<f64, D>) -> Self {
-        Self {
-            min_max: Option::Some((min, max)),
-        }
-    }
-
-    fn try_min(&self) -> Option<SVec<f64, D>> {
-        Some(self.min_max?.0)
-    }
-    fn try_max(&self) -> Option<SVec<f64, D>> {
-        Some(self.min_max?.1)
-    }
-
-    fn clamp(&self, p: SVec<f64, D>) -> SVec<f64, D> {
-        p.clamp(self.min(), self.max())
-    }
-
-    fn range(&self) -> SVec<f64, D> {
-        let p: SVec<f64, D>;
-        if self.is_empty() {
-            p = SVec::<f64, D>::zeros();
-            return p;
-        }
-        p = self.max() - self.min();
-        p
-    }
-
-    fn mid(&self) -> SVec<f64, D> {
-        self.min() + 0.5 * self.range()
-    }
-
-    fn extend(&mut self, point: &SVec<f64, D>) {
-        if self.is_empty() {
-            *self = Self::from_point(*point);
-        }
-        let (min, max) = self.min().inf_sup(point);
-
-        *self = Self::from_min_max(min, max)
-    }
-}
-
-impl IsRegion<1, i64> for IInterval {
-    fn unbounded() -> Self {
-        Self {
-            min_max: Option::Some((i64::MIN, i64::MAX)),
-        }
-    }
-
-    fn empty() -> Self {
-        Self {
-            min_max: Option::None,
-        }
-    }
-
-    fn from_min_max(min: i64, max: i64) -> Self {
-        Self {
-            min_max: Option::Some((min, max)),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.min_max.is_none()
-    }
-
-    fn is_degenerated(&self) -> bool {
-        false
-    }
-
-    fn is_unbounded(&self) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min() == i64::MIN && self.max() == i64::MAX
-    }
-
-    fn extend(&mut self, point: &i64) {
-        if self.is_empty() {
-            *self = Self::from_point(*point);
-        }
-        let (min, max) = (self.min().min(*point), self.max().max(*point));
-
-        *self = Self::from_min_max(min, max)
-    }
-
-    fn try_min(&self) -> Option<i64> {
-        Some(self.min_max?.0)
-    }
-
-    fn try_max(&self) -> Option<i64> {
-        Some(self.min_max?.1)
-    }
-
-    fn clamp(&self, p: i64) -> i64 {
-        p.clamp(self.min(), self.max())
-    }
-
-    fn range(&self) -> i64 {
-        if self.is_empty() {
-            return 0;
-        }
-        self.max() - self.min()
-    }
-
-    fn mid(&self) -> i64 {
-        self.min() + self.range() / 2
-    }
-}
-
-impl<const D: usize> IsRegion<D, SVec<i64, D>> for IRegion<D> {
-    fn unbounded() -> Self {
-        let s: SVec<i64, D> = SVec::<i64, D>::smallest();
-        let l: SVec<i64, D> = SVec::<i64, D>::largest();
-        Self::from_min_max(s, l)
-    }
-
-    fn empty() -> Self {
-        Self {
-            min_max: Option::default(),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.min_max.is_none()
-    }
-
-    fn is_degenerated(&self) -> bool {
-        false
-    }
-
-    fn is_unbounded(&self) -> bool {
-        if self.is_empty() {
-            return false;
-        }
-        self.min() == SVec::<i64, D>::smallest() && self.max() == SVec::<i64, D>::largest()
-    }
-
-    fn from_min_max(min: SVec<i64, D>, max: SVec<i64, D>) -> Self {
-        Self {
-            min_max: Option::Some((min, max)),
-        }
-    }
-
-    fn try_min(&self) -> Option<SVec<i64, D>> {
-        Some(self.min_max?.0)
-    }
-    fn try_max(&self) -> Option<SVec<i64, D>> {
-        Some(self.min_max?.1)
-    }
-
-    fn clamp(&self, p: SVec<i64, D>) -> SVec<i64, D> {
-        p.clamp(self.min(), self.max())
-    }
-
-    fn range(&self) -> SVec<i64, D> {
-        let p: SVec<i64, D>;
-        if self.is_empty() {
-            p = SVec::<i64, D>::zeros();
-            return p;
-        }
-        p = self.max() - self.min() + SVec::<i64, D>::repeat(1);
-        p
-    }
-
-    fn mid(&self) -> SVec<i64, D> {
-        self.min() + self.range() / 2
-    }
-
-    fn extend(&mut self, point: &SVec<i64, D>) {
-        if self.is_empty() {
-            *self = Self::from_point(*point);
-        }
-        let (min, max) = self.min().inf_sup(point);
-
-        *self = Self::from_min_max(min, max)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn region() {
-        let empty_f64 = Region::<2>::empty();
-        assert!(empty_f64.is_empty());
-        assert!(!empty_f64.is_degenerated());
-        assert!(!empty_f64.is_proper());
-        assert!(!empty_f64.is_unbounded());
-
-        let unbounded = Region::<2>::unbounded();
-        assert!(!unbounded.is_empty());
-        assert!(!unbounded.is_degenerated());
-        assert!(unbounded.is_proper());
-        assert!(unbounded.is_unbounded());
-
-        let one_i64 = IRegion::<2>::from_point(SVec::<i64, 2>::repeat(1));
-        assert!(!one_i64.is_empty());
-        assert!(!one_i64.is_degenerated());
-        assert!(one_i64.is_proper());
-        assert!(!one_i64.is_unbounded());
-
-        let two_f64 = Region::<2>::from_point(SVec::<f64, 2>::repeat(2.0));
-        assert!(!two_f64.is_empty());
-        assert!(two_f64.is_degenerated());
-        assert!(!two_f64.is_proper());
-        assert!(!two_f64.is_unbounded());
-    }
-
-    #[test]
-    fn interval() {
-        let empty_f64 = Interval::empty();
-        assert!(empty_f64.is_empty());
-        assert!(!empty_f64.is_degenerated());
-        assert!(!empty_f64.is_proper());
-        assert!(!empty_f64.is_unbounded());
-
-        let unbounded = Interval::unbounded();
-        assert!(!unbounded.is_empty());
-        assert!(!unbounded.is_degenerated());
-        assert!(unbounded.is_proper());
-        assert!(unbounded.is_unbounded());
-
-        let one_i64 = IRegion::<1>::from_point(SVec::<i64, 1>::repeat(1));
-        assert!(!one_i64.is_empty());
-        assert!(!one_i64.is_degenerated());
-        assert!(one_i64.is_proper());
-        assert!(!one_i64.is_unbounded());
-
-        let two_f64 = Interval::from_point(2.0);
-        assert!(!two_f64.is_empty());
-        assert!(two_f64.is_degenerated());
-        assert!(!two_f64.is_proper());
-        assert!(!two_f64.is_unbounded());
-    }
+    /// For an interval [a, b], the center is (a + b) / 2.
+    fn center(&self) -> P;
+    /// Return lower bound.
+    fn lower(&self) -> P;
+    /// Return upper bound.
+    fn upper(&self) -> P;
+    /// Set lower bound.
+    fn set_lower(&mut self, l: P);
+    /// Set upper bound.
+    fn set_upper(&mut self, u: P);
 }

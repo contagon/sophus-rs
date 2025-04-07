@@ -1,10 +1,17 @@
-use crate::camera::clipping_planes::ClippingPlanes;
-use crate::camera::intrinsics::RenderIntrinsics;
-use crate::camera::properties::RenderCameraProperties;
-use sophus_image::arc_image::ArcImage4U8;
-use sophus_image::image_view::IsImageView;
-use sophus_image::ImageSize;
-use sophus_sensor::dyn_camera::DynCameraF64;
+use sophus_image::{
+    ArcImage4U8,
+    ImageSize,
+};
+use sophus_sensor::DynCameraF64;
+
+use crate::{
+    camera::{
+        ClippingPlanes,
+        RenderCameraProperties,
+        RenderIntrinsics,
+    },
+    prelude::*,
+};
 
 /// Frame to hold content
 ///

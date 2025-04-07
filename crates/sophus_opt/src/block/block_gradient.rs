@@ -1,24 +1,46 @@
-use super::BlockRange;
 use nalgebra::Const;
 use sophus_autodiff::linalg::VecF64;
 
+use super::BlockRange;
+
 /// Block gradient vector
+///
+/// ```ascii
+/// -----------
+/// |         |
+/// |   g_0   |
+/// |         |
+/// |---------|
+/// |    .    |
+/// |    .    |
+/// |    .    |
+/// |---------|
+/// |         |
+/// | g_{N-1} |
+/// |         |
+/// -----------
+/// ```
+///
+/// The `INPUT_DIM`-dimensional vector is partitioned into `N` blocks, each of
+/// which has an offset and dimension specified by the `ranges` array.
+///
+/// Hence, the gradient sub-block `g_i` has a dimensionality of `ranges(i).dim`.
 #[derive(Debug, Clone)]
-pub struct BlockGradient<const NUM: usize, const NUM_ARGS: usize> {
+pub struct BlockGradient<const INPUT_DIM: usize, const N: usize> {
     /// vector storage
-    pub vec: nalgebra::SVector<f64, NUM>,
+    pub vec: nalgebra::SVector<f64, INPUT_DIM>,
     /// ranges, one for each block
-    pub ranges: [BlockRange; NUM_ARGS],
+    pub ranges: [BlockRange; N],
 }
 
-impl<const NUM: usize, const NUM_ARGS: usize> BlockGradient<NUM, NUM_ARGS> {
+impl<const INPUT_DIM: usize, const N: usize> BlockGradient<INPUT_DIM, N> {
     /// create a new block vector
-    pub fn new(dims: &[usize; NUM_ARGS]) -> Self {
+    pub fn new(dims: &[usize; N]) -> Self {
         debug_assert!(!dims.is_empty());
 
         let num_blocks = dims.len();
 
-        let mut ranges = [BlockRange::default(); NUM_ARGS];
+        let mut ranges = [BlockRange::default(); N];
 
         let mut num_rows: usize = 0;
 
@@ -62,7 +84,7 @@ impl<const NUM: usize, const NUM_ARGS: usize> BlockGradient<NUM, NUM_ARGS> {
             nalgebra::Dyn,
             nalgebra::Const<1>,
             nalgebra::Const<1>,
-            Const<NUM>,
+            Const<INPUT_DIM>,
         >,
     > {
         let idx = self.ranges[ith].index as usize;
@@ -83,7 +105,7 @@ impl<const NUM: usize, const NUM_ARGS: usize> BlockGradient<NUM, NUM_ARGS> {
             nalgebra::Const<ROWS>,
             nalgebra::Const<1>,
             nalgebra::Const<1>,
-            Const<NUM>,
+            Const<INPUT_DIM>,
         >,
     > {
         let idx = self.ranges[ith].index as usize;

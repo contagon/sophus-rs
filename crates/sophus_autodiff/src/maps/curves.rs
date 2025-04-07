@@ -1,24 +1,17 @@
-use crate::linalg::SMat;
 use crate::prelude::*;
-use nalgebra::SVector;
 
 extern crate alloc;
 
-/// A smooth curve in ℝ.
+/// A smooth curve in `ℝ`.
 ///
 /// This is a function which takes a scalar and returns a scalar:
 ///
-///  f: ℝ -> ℝ
-pub struct ScalarValuedCurve<
-    S: IsScalar<BATCH, DM, DN>,
-    const BATCH: usize,
-    const DM: usize,
-    const DN: usize,
-> {
+///  `f: ℝ -> ℝ`
+pub struct ScalarValuedCurve<S, const BATCH: usize> {
     phantom: core::marker::PhantomData<S>,
 }
 
-impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> ScalarValuedCurve<S, BATCH, 0, 0> {
+impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> ScalarValuedCurve<S, BATCH> {
     /// Finite difference quotient of the scalar-valued curve.
     ///
     /// The derivative is also a scalar.
@@ -31,31 +24,16 @@ impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> ScalarValuedCurve<S, BATCH, 0
     }
 }
 
-impl<D: IsDualScalar<BATCH, 1, 1>, const BATCH: usize> ScalarValuedCurve<D, BATCH, 1, 1> {
-    /// Auto differentiation of the scalar-valued curve.
-    pub fn fw_autodiff<TFn>(curve: TFn, a: D::RealScalar) -> D::RealScalar
-    where
-        TFn: Fn(D) -> D,
-    {
-        curve(D::var(a)).derivative()[(0, 0)]
-    }
-}
-
-/// A smooth curve in ℝʳ.
+/// A smooth curve in `ℝʳ`.
 ///
 /// This is a function which takes a scalar and returns a vector:
 ///
-///   f: ℝ -> ℝʳ
-pub struct VectorValuedCurve<
-    S: IsScalar<BATCH, DM, DN>,
-    const BATCH: usize,
-    const DM: usize,
-    const DN: usize,
-> {
+///   `f: ℝ -> ℝʳ`
+pub struct VectorValuedCurve<S, const BATCH: usize> {
     phantom: core::marker::PhantomData<S>,
 }
 
-impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> VectorValuedCurve<S, BATCH, 0, 0> {
+impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> VectorValuedCurve<S, BATCH> {
     /// Finite difference quotient of the vector-valued curve.
     ///
     /// The derivative is also a vector.
@@ -68,30 +46,10 @@ impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> VectorValuedCurve<S, BATCH, 0
     }
 }
 
-impl<D: IsDualScalar<BATCH, 1, 1>, const BATCH: usize> VectorValuedCurve<D, BATCH, 1, 1> {
-    /// Auto differentiation of the vector-valued curve.
-    pub fn fw_autodiff<TFn, const ROWS: usize>(
-        curve: TFn,
-        a: D::RealScalar,
-    ) -> SVector<D::RealScalar, ROWS>
-    where
-        TFn: Fn(D) -> D::Vector<ROWS>,
-        D::Vector<ROWS>: IsDualVector<D, ROWS, BATCH, 1, 1>,
-    {
-        let mut out = SVector::<D::RealScalar, ROWS>::zeros();
-        let m = curve(D::var(a));
-
-        for i in 0..ROWS {
-            out[i] = m.get_elem(i).derivative()[(0, 0)];
-        }
-        out
-    }
-}
-
-/// A smooth curve in ℝʳ x ℝᶜ.
+/// A smooth curve in `ℝʳ x ℝᶜ`.
 ///
 /// This is a function which takes a scalar and returns a matrix:
-///   f: ℝ -> ℝʳ x ℝᶜ
+///   `f: ℝ -> ℝʳˣᶜ`
 pub struct MatrixValuedCurve<
     S: IsScalar<BATCH, DM, DN>,
     const BATCH: usize,
@@ -118,37 +76,19 @@ impl<S: IsScalar<BATCH, 0, 0>, const BATCH: usize> MatrixValuedCurve<S, BATCH, 0
     }
 }
 
-impl<D: IsDualScalar<BATCH, 1, 1>, const BATCH: usize> MatrixValuedCurve<D, BATCH, 1, 1> {
-    /// Auto differentiation of the matrix-valued curve.
-    pub fn fw_autodiff<TFn, const ROWS: usize, const COLS: usize>(
-        curve: TFn,
-        a: D::RealScalar,
-    ) -> SMat<<D as IsScalar<BATCH, 1, 1>>::RealScalar, ROWS, COLS>
-    where
-        TFn: Fn(D) -> D::Matrix<ROWS, COLS>,
-        D::Matrix<ROWS, COLS>: IsDualMatrix<D, ROWS, COLS, BATCH, 1, 1>,
-    {
-        let mut out = SMat::<D::RealScalar, ROWS, COLS>::zeros();
-        let m = curve(D::var(a));
-
-        for i in 0..ROWS {
-            for j in 0..COLS {
-                out[(i, j)] = m.get_elem([i, j]).derivative()[(0, 0)];
-            }
-        }
-        out
-    }
-}
-
 #[test]
 fn curve_test() {
     #[cfg(feature = "simd")]
     use crate::dual::DualBatchScalar;
-    use crate::dual::DualScalar;
-    use crate::linalg::scalar::IsScalar;
     #[cfg(feature = "simd")]
     use crate::linalg::BatchScalarF64;
-    use crate::linalg::EPS_F64;
+    use crate::{
+        dual::DualScalar,
+        linalg::{
+            IsScalar,
+            EPS_F64,
+        },
+    };
 
     trait CurveTest {
         fn run_curve_test();
@@ -159,7 +99,7 @@ fn curve_test() {
     ) => {
             impl CurveTest for $dual_scalar {
                 fn run_curve_test() {
-                    use crate::linalg::vector::IsVector;
+                    use crate::linalg::IsVector;
 
                     for i in 0..10 {
                         let a = <$scalar>::from_f64(0.1 * (i as f64));
@@ -173,18 +113,12 @@ fn curve_test() {
                         >(
                             x: S,
                         ) -> S {
-                            x.clone() * x
+                            x * x
                         }
-                        let finite_diff =
-                            ScalarValuedCurve::<$scalar, $batch, 0, 0>::sym_diff_quotient(
-                                square_fn,
-                                a.clone(),
-                                EPS_F64,
-                            );
-                        let auto_grad =
-                            ScalarValuedCurve::<$dual_scalar, $batch, 1, 1>::fw_autodiff(
-                                square_fn, a,
-                            );
+                        let finite_diff = ScalarValuedCurve::<$scalar, $batch>::sym_diff_quotient(
+                            square_fn, a, EPS_F64,
+                        );
+                        let auto_grad = square_fn(<$dual_scalar>::var(a)).curve_derivative();
                         approx::assert_abs_diff_eq!(finite_diff, auto_grad, epsilon = 0.0002);
                     }
 
@@ -203,16 +137,11 @@ fn curve_test() {
                             S::Vector::<2>::from_array([x.clone().cos(), x.sin()])
                         }
 
-                        let finite_diff =
-                            VectorValuedCurve::<$scalar, $batch, 0, 0>::sym_diff_quotient(
-                                trig_fn,
-                                a.clone(),
-                                EPS_F64,
-                            );
-                        let auto_grad =
-                            VectorValuedCurve::<$dual_scalar, $batch, 1, 1>::fw_autodiff(
-                                trig_fn, a,
-                            );
+                        let finite_diff = VectorValuedCurve::<$scalar, $batch>::sym_diff_quotient(
+                            trig_fn, a, EPS_F64,
+                        );
+                        let auto_grad = trig_fn(<$dual_scalar>::var(a)).curve_derivative();
+
                         approx::assert_abs_diff_eq!(finite_diff, auto_grad, epsilon = 0.0003);
                     }
 
@@ -229,23 +158,20 @@ fn curve_test() {
                         >(
                             x: S,
                         ) -> S::Matrix<2, 3> {
-                            let sin = x.clone().sin();
-                            let cos = x.clone().cos();
+                            let sin = x.sin();
+                            let cos = x.cos();
 
                             S::Matrix::from_array2([
-                                [cos.clone(), sin.clone(), S::from_f64(0.0)],
+                                [cos, sin, S::from_f64(0.0)],
                                 [-sin, cos, S::from_f64(0.0)],
                             ])
                         }
 
                         let finite_diff =
                             MatrixValuedCurve::<$scalar, $batch, 0, 0>::sym_diff_quotient(
-                                fn_x,
-                                a.clone(),
-                                EPS_F64,
+                                fn_x, a, EPS_F64,
                             );
-                        let auto_grad =
-                            MatrixValuedCurve::<$dual_scalar, $batch, 1, 1>::fw_autodiff(fn_x, a);
+                        let auto_grad = fn_x(<$dual_scalar>::var(a)).curve_derivative();
                         approx::assert_abs_diff_eq!(finite_diff, auto_grad, epsilon = 0.0001);
                     }
                 }

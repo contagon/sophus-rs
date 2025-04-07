@@ -1,17 +1,39 @@
-use crate::groups::rotation2::Rotation2Impl;
-use crate::groups::translation_product_product::TranslationProductGroupImpl;
-use crate::lie_group::average::iterative_average;
-use crate::lie_group::average::IterativeAverageError;
-use crate::lie_group::LieGroup;
-use crate::prelude::*;
-use crate::traits::EmptySliceError;
-use crate::traits::HasAverage;
-use crate::Rotation2;
 use core::borrow::Borrow;
 
 use log::warn;
 
-/// 2D isometry group implementation struct - SE(2)
+use crate::{
+    lie_group::{
+        average::{
+            iterative_average,
+            IterativeAverageError,
+        },
+        LieGroup,
+    },
+    prelude::*,
+    EmptySliceError,
+    HasAverage,
+    Rotation2,
+    Rotation2Impl,
+    TranslationProductGroupImpl,
+};
+
+/// 2d isometry - element of the Special Euclidean group SE(2)
+///
+///  * BATCH
+///     - batch dimension. If S is f64 or [sophus_autodiff::dual::DualScalar] then BATCH=1.
+///  * DM, DN
+///     - DM x DN is the static shape of the Jacobian to be computed if S == DualScalar<DM,DN>. If S
+///       == f64, then DM==0, DN==0.
+pub type Isometry2<S, const BATCH: usize, const DM: usize, const DN: usize> =
+    LieGroup<S, 3, 4, 2, 3, BATCH, DM, DN, Isometry2Impl<S, BATCH, DM, DN>>;
+
+/// 2d isometry with f64 scalar type - element of the Special Euclidean group SE(2)
+///
+/// See [Isometry2] for details.
+pub type Isometry2F64 = Isometry2<f64, 1, 0, 0>;
+
+/// 2d isometry implementation details
 pub type Isometry2Impl<S, const BATCH: usize, const DM: usize, const DN: usize> =
     TranslationProductGroupImpl<
         S,
@@ -27,30 +49,19 @@ pub type Isometry2Impl<S, const BATCH: usize, const DM: usize, const DN: usize> 
         Rotation2Impl<S, BATCH, DM, DN>,
     >;
 
-/// 2D isometry group - SE(2)
-pub type Isometry2<S, const BATCH: usize, const DM: usize, const DN: usize> =
-    LieGroup<S, 3, 4, 2, 3, BATCH, DM, DN, Isometry2Impl<S, BATCH, DM, DN>>;
-
-/// 2D isometry group with f64 scalar type
-pub type Isometry2F64 = Isometry2<f64, 1, 0, 0>;
-
 impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: usize>
     Isometry2<S, BATCH, DM, DN>
 {
     /// create isometry from translation and rotation
-    pub fn from_translation_and_rotation<P, F>(translation: P, rotation: F) -> Self
+    pub fn from_translation_and_rotation<F>(translation: S::Vector<2>, rotation: F) -> Self
     where
-        P: Borrow<S::Vector<2>>,
         F: Borrow<Rotation2<S, BATCH, DM, DN>>,
     {
         Self::from_translation_and_factor(translation, rotation)
     }
 
     /// create isometry from translation
-    pub fn from_translation<P>(translation: P) -> Self
-    where
-        P: Borrow<S::Vector<2>>,
-    {
+    pub fn from_translation(translation: S::Vector<2>) -> Self {
         Self::from_translation_and_factor(translation, Rotation2::identity())
     }
 
@@ -140,12 +151,13 @@ impl<S: IsSingleScalar<DM, DN> + PartialOrd, const DM: usize, const DN: usize>
 
 #[test]
 fn isometry2_prop_tests() {
-    use crate::lie_group::real_lie_group::RealLieGroupTest;
     #[cfg(feature = "simd")]
-    use sophus_autodiff::dual::dual_batch_scalar::DualBatchScalar;
-    use sophus_autodiff::dual::dual_scalar::DualScalar;
+    use sophus_autodiff::dual::DualBatchScalar;
+    use sophus_autodiff::dual::DualScalar;
     #[cfg(feature = "simd")]
     use sophus_autodiff::linalg::BatchScalarF64;
+
+    use crate::lie_group::real_lie_group::RealLieGroupTest;
 
     Isometry2F64::test_suite();
     #[cfg(feature = "simd")]

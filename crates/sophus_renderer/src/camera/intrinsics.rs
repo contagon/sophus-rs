@@ -1,10 +1,12 @@
 use sophus_autodiff::linalg::VecF64;
 use sophus_image::ImageSize;
 use sophus_lie::prelude::IsVector;
-use sophus_sensor::camera_enum::perspective_camera::PinholeCameraF64;
-use sophus_sensor::camera_enum::perspective_camera::UnifiedCameraF64;
-use sophus_sensor::camera_enum::PerspectiveCameraEnum;
-use sophus_sensor::dyn_camera::DynCameraF64;
+use sophus_sensor::{
+    DynCameraF64,
+    EnhancedUnifiedCameraF64,
+    PerspectiveCameraEnum,
+    PinholeCameraF64,
+};
 
 /// Camera intrinsics
 #[derive(Clone, Debug)]
@@ -12,7 +14,7 @@ pub enum RenderIntrinsics {
     /// Pinhole camera model
     Pinhole(PinholeCameraF64),
     /// Unified camera model
-    UnifiedExtended(UnifiedCameraF64),
+    UnifiedExtended(EnhancedUnifiedCameraF64),
 }
 
 impl RenderIntrinsics {
@@ -22,7 +24,7 @@ impl RenderIntrinsics {
             PerspectiveCameraEnum::Pinhole(pinhole) => RenderIntrinsics::Pinhole(*pinhole),
             PerspectiveCameraEnum::KannalaBrandt(_camera) => todo!(),
             PerspectiveCameraEnum::BrownConrady(_camera) => todo!(),
-            PerspectiveCameraEnum::UnifiedExtended(camera) => {
+            PerspectiveCameraEnum::EnhancedUnified(camera) => {
                 RenderIntrinsics::UnifiedExtended(*camera)
             }
         }

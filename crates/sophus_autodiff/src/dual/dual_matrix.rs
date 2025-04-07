@@ -1,21 +1,49 @@
-use crate::dual::DualScalar;
-use crate::dual::DualVector;
-use crate::linalg::MatF64;
-use crate::linalg::SMat;
-use crate::prelude::*;
-use approx::AbsDiffEq;
-use approx::RelativeEq;
-use core::borrow::Borrow;
-use core::fmt::Debug;
-use core::ops::Add;
-use core::ops::Mul;
-use core::ops::Neg;
-use core::ops::Sub;
+use core::{
+    borrow::Borrow,
+    fmt::Debug,
+    ops::{
+        Add,
+        Mul,
+        Neg,
+        Sub,
+    },
+};
+
+use approx::{
+    AbsDiffEq,
+    RelativeEq,
+};
 use num_traits::Zero;
 
 use super::matrix::MatrixValuedDerivative;
+use crate::{
+    dual::{
+        matrix::IsDualMatrixFromCurve,
+        DualScalar,
+        DualVector,
+    },
+    linalg::{
+        MatF64,
+        SMat,
+    },
+    prelude::*,
+};
 
-/// DualScalarLike matrix
+/// A dual vector, storing a set of dual scalars (with partial derivatives) for each row.
+///
+/// Conceptually, this is the forward-mode AD version of a ROWSxCOLS matrix, where each element is a
+/// where each element is a [`DualScalar<DM, DN>`], i.e., each element carries its own infinitesimal
+/// part.
+///
+/// # Private fields
+/// - `inner`: A `ROWS x COLS` [`SMat`] of [`DualScalar<DM, DN>`]s.
+///
+/// # Generic Parameters
+/// - `ROWS`, `COLS`: Matrix dimensions.
+/// - `DM`, `DN`: Dimensions for each component’s derivative (infinitesimal) matrix. For example,
+///   `DM=3, DN=1` might store partial derivatives w.r.t. a 3D input for each element.
+///
+/// See [crate::dual::IsDualMatrix] for more details.
 #[derive(Clone, Debug, Copy)]
 pub struct DualMatrix<const ROWS: usize, const COLS: usize, const DM: usize, const DN: usize> {
     pub(crate) inner: SMat<DualScalar<DM, DN>, ROWS, COLS>,
@@ -62,6 +90,21 @@ impl<const ROWS: usize, const COLS: usize, const DM: usize, const DN: usize>
             }
         }
         MatrixValuedDerivative { out_mat: v }
+    }
+}
+
+impl<const ROWS: usize, const COLS: usize> IsDualMatrixFromCurve<DualScalar<1, 1>, ROWS, COLS, 1>
+    for DualMatrix<ROWS, COLS, 1, 1>
+{
+    fn curve_derivative(&self) -> MatF64<ROWS, COLS> {
+        let mut out = MatF64::<ROWS, COLS>::zeros();
+
+        for i in 0..ROWS {
+            for j in 0..COLS {
+                *out.elem_mut([i, j]) = self.inner[(i, j)].derivative()[(0, 0)];
+            }
+        }
+        out
     }
 }
 
@@ -164,8 +207,12 @@ impl<const ROWS: usize, const COLS: usize, const DM: usize, const DN: usize>
         DualMatrix::from_real_matrix(MatF64::<ROWS, COLS>::identity())
     }
 
-    fn get_elem(&self, idx: [usize; 2]) -> DualScalar<DM, DN> {
+    fn elem(&self, idx: [usize; 2]) -> DualScalar<DM, DN> {
         self.inner[(idx[0], idx[1])]
+    }
+
+    fn elem_mut(&mut self, idx: [usize; 2]) -> &mut DualScalar<DM, DN> {
+        &mut self.inner[(idx[0], idx[1])]
     }
 
     fn from_array2<A>(duals: A) -> Self
@@ -323,10 +370,6 @@ impl<const ROWS: usize, const COLS: usize, const DM: usize, const DN: usize>
         } else {
             *other.borrow()
         }
-    }
-
-    fn set_elem(&mut self, idx: [usize; 2], val: DualScalar<DM, DN>) {
-        self.inner[(idx[0], idx[1])] = val;
     }
 
     fn transposed(&self) -> <DualScalar<DM, DN> as IsScalar<1, DM, DN>>::Matrix<COLS, ROWS> {

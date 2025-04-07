@@ -1,8 +1,47 @@
-use core::ops::Index;
-use core::time::Duration;
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![deny(missing_docs)]
+#![no_std]
+#![allow(clippy::needless_range_loop)]
+#![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
+
+#[doc = include_str!(concat!("../",  core::env!("CARGO_PKG_README")))]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+/// sophus_timeseries prelude.
+///
+/// It is recommended to import this prelude when working with `sophus_timeseries types:
+///
+/// ```
+/// use sophus_timeseries::prelude::*;
+/// ```
+///
+/// or
+///
+/// ```ignore
+/// use sophus::prelude::*;
+/// ```
+///
+/// to import all preludes when using the `sophus` umbrella crate.
+pub mod prelude {
+    pub use sophus_geo::prelude::*;
+}
+
+use core::{
+    ops::Index,
+    time::Duration,
+};
+
 use log::warn;
-use sophus_geo::region::Interval;
-use sophus_geo::region::IsRegion;
+use sophus_geo::{
+    prelude::*,
+    region::Interval,
+};
+
 extern crate alloc;
 
 /// has time_stamp method
@@ -28,8 +67,8 @@ pub trait HasInterpolate: HasTimeStamp {
 ///
 /// The following operations are especially efficient:
 ///
-/// - Adding an item with a time stamp that is newer than the last item in the time series.
-///   This is the common case when adding items in order.
+/// - Adding an item with a time stamp that is newer than the last item in the time series. This is
+///   the common case when adding items in order.
 /// - Accessing the first and last item in the time series.
 /// - Access item by index.
 /// - Pruning older data by time duration.
@@ -66,12 +105,14 @@ impl<T: HasTimeStamp> TimeSeries<T> {
         self.sorted_data.reserve(n);
     }
 
-    /// Find the nearest item in the time series to the given time stamp and return a reference to it.
+    /// Find the nearest item in the time series to the given time stamp and return a reference to
+    /// it.
     pub fn find_nearest(&self, time: f64) -> Option<IndexedItem<T>> {
         self.find_nearest_within(time, f64::INFINITY)
     }
 
-    /// Find the nearest item in the time series to the given time stamp and return a reference to it.
+    /// Find the nearest item in the time series to the given time stamp and return a reference to
+    /// it.
     pub fn find_nearest_within(&self, time: f64, max_dist: f64) -> Option<IndexedItem<T>> {
         if !time.is_finite() {
             warn!(
@@ -191,7 +232,7 @@ impl<T: HasTimeStamp> TimeSeries<T> {
         if self.is_empty() {
             return Interval::empty();
         }
-        Interval::from_min_max(
+        Interval::from_bounds(
             self.oldest().unwrap().time_stamp(),
             self.newest().unwrap().time_stamp(),
         )
@@ -289,8 +330,9 @@ impl<T: HasTimeStamp> Index<usize> for TimeSeries<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::time::Duration;
+
+    use super::*;
 
     // Mock struct implementing HasTimeStamp
     #[derive(Debug, PartialEq, Clone)]
@@ -530,8 +572,8 @@ mod tests {
         });
 
         let interval = series.time_interval();
-        assert_eq!(interval.min(), 1.0);
-        assert_eq!(interval.max(), 3.0);
+        assert_eq!(interval.try_lower().unwrap(), 1.0);
+        assert_eq!(interval.try_upper().unwrap(), 3.0);
     }
     #[test]
     fn test_find_nearest_empty_series() {
@@ -832,7 +874,7 @@ mod tests {
         }
 
         let interval = series.time_interval();
-        assert_eq!(interval, Interval::from_min_max(5.0, 15.0));
+        assert_eq!(interval, Interval::from_bounds(5.0, 15.0));
     }
 
     #[test]

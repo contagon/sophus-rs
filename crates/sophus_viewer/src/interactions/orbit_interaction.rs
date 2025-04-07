@@ -1,17 +1,29 @@
-use crate::interactions::SceneFocus;
-use crate::interactions::ViewportScale;
-use crate::prelude::*;
 use eframe::egui;
 use sophus_autodiff::linalg::VecF64;
-use sophus_image::arc_image::ArcImageF32;
-use sophus_image::image_view::IsImageView;
-use sophus_image::ImageSize;
-use sophus_lie::traits::IsTranslationProductGroup;
-use sophus_lie::Isometry3;
-use sophus_lie::Isometry3F64;
-use sophus_renderer::camera::clipping_planes::ClippingPlanesF64;
-use sophus_renderer::camera::intrinsics::RenderIntrinsics;
-use sophus_renderer::types::TranslationAndScaling;
+use sophus_image::{
+    ArcImageF32,
+    ImageSize,
+};
+use sophus_lie::{
+    IsTranslationProductGroup,
+    Isometry3,
+    Isometry3F64,
+};
+use sophus_renderer::{
+    camera::{
+        ClippingPlanesF64,
+        RenderIntrinsics,
+    },
+    TranslationAndScaling,
+};
+
+use crate::{
+    interactions::{
+        SceneFocus,
+        ViewportScale,
+    },
+    prelude::*,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) struct OrbitalPointerState {
@@ -189,7 +201,6 @@ impl OrbitalInteraction {
     /// primary button: in-plane translate
     ///
     /// secondary button: rotate about scene focus
-    ///
     pub fn process_pointer(
         &mut self,
         active_view: &mut String,

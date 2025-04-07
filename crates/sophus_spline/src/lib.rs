@@ -1,15 +1,41 @@
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 #![deny(missing_docs)]
-#![allow(clippy::needless_range_loop)]
 #![no_std]
-//! # Spline module
+#![allow(clippy::needless_range_loop)]
+#![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
 
-/// Cubic B-Spline details
-pub mod spline_segment;
+#[doc = include_str!(concat!("../",  core::env!("CARGO_PKG_README")))]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
 
-use crate::spline_segment::CubicBSplineSegment;
-use crate::spline_segment::SegmentCase;
+#[cfg(feature = "std")]
+extern crate std;
+
+mod spline_segment;
+
+/// sophus_spline prelude.
+///
+/// It is recommended to import this prelude when working with `sophus_spline types:
+///
+/// ```
+/// use sophus_spline::prelude::*;
+/// ```
+///
+/// or
+///
+/// ```ignore
+/// use sophus::prelude::*;
+/// ```
+///
+/// to import all preludes when using the `sophus` umbrella crate.
+pub mod prelude {
+    pub use sophus_autodiff::prelude::*;
+}
+
 use log::debug;
 use sophus_autodiff::prelude::*;
+pub use spline_segment::*;
 
 extern crate alloc;
 
@@ -246,7 +272,7 @@ impl<S: IsSingleScalar<DM, DN> + 'static, const DIMS: usize, const DM: usize, co
 #[test]
 fn test_pline() {
     use log::info;
-    use sophus_autodiff::example_points;
+    use sophus_autodiff::points::example_points;
 
     let points = example_points::<f64, 2, 1, 0, 0>();
     for (t0, delta_t) in [(0.0, 1.0)] {

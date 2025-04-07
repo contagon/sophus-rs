@@ -1,24 +1,73 @@
-use super::traits::IsLieGroupImpl;
-use crate::prelude::*;
+pub(crate) mod average;
+pub(crate) mod factor_lie_group;
+pub(crate) mod group_mul;
+pub(crate) mod lie_group_manifold;
+pub(crate) mod real_lie_group;
+
+use core::{
+    borrow::Borrow,
+    fmt::Debug,
+};
+
 use approx::assert_relative_eq;
-use core::borrow::Borrow;
-use core::fmt::Debug;
-use sophus_autodiff::manifold::IsTangent;
-use sophus_autodiff::params::HasParams;
-use sophus_autodiff::params::IsParamsImpl;
+use sophus_autodiff::{
+    manifold::IsTangent,
+    params::{
+        HasParams,
+        IsParamsImpl,
+    },
+};
+
+use crate::{
+    prelude::*,
+    IsLieGroupImpl,
+};
 
 extern crate alloc;
 
-/// Lie group average
-pub mod average;
-/// Group multiplication
-pub mod group_mul;
-/// Lie group as a manifold
-pub mod lie_group_manifold;
-/// Real lie group
-pub mod real_lie_group;
-
 /// Lie group
+///
+/// A Lie group is a group - i.e. fulfills all the group axioms (of multiplication) - which is
+/// also a manifold. A manifold is a space which looks locally Euclidean, but globally might
+/// have a very different structure.
+///
+/// Most Lie groups (and all Lie groups in the context of the crate) are Matrix Lie groups:
+/// Matrix Lie groups are simply groups of invertible NxN matrices. For instance:
+///   - The group of all invertible NxN matrices is a Lie group. It is called the General Linear
+///     Group - short GL(N).
+///   - The group of orthogonal 3x3 matrices with positive determinate (and hence invertible) is a
+///     Lie - called Special Orthogonal Group 3 - short SO(3). It is a sub-group of GL(3).
+///     Geometrically, it is the group of rotations in 3d - see the Rotation3 struct.
+///
+/// This struct uses the following two generic type parameter:
+///
+///  * S
+///    - the underlying scalar such as f64 or [sophus_autodiff::dual::DualScalar].
+///  * G
+///    - concrete Lie group implementation (e.g. for [crate::Rotation2], or [crate::Isometry3])
+///
+/// and the following const generic:
+///
+///  * DOF
+///    - Degrees of freedom of the transformation, aka dimension of the tangent space
+///  * PARAMS
+///     - Number of parameters.
+///  * POINT
+///     - Dimension of the points the transformation is acting on.
+///  * AMBIENT
+///      - Dimension of the ambient space. If the matrix is represented as a square matrix then its
+///        dimension is AMBIENT x AMBIENT. Note that either AMBIENT==POINT or AMBIENT==POINT+1. In
+///        the latter case, the matrix acts on homogeneous points.
+///  * BATCH
+///     - Batch dimension. If S is f64 or [sophus_autodiff::dual::DualScalar] then BATCH=1.
+///  * DM, DN
+///    - DM x DN is the static shape of the Jacobian to be computed if S == DualScalar<DM, DN>. If S
+///      == f64, then DM==0, DN==0.
+///
+/// Note on the API: Ideally, we would be able to deduce most const generics, e.g. BATCH, DM, DN
+///                  from S and DOF, PARAMS, POINT, AMBIENT from G. Some such API simplifications
+///                  might be possible once "min_generic_const_args" is merged / stable:
+///                  <https://rust-lang.github.io/rust-project-goals/2024h2/min_generic_const_arguments.html>
 #[derive(Debug, Copy, Clone, Default)]
 pub struct LieGroup<
     S: IsScalar<BATCH, DM, DN>,
@@ -33,130 +82,6 @@ pub struct LieGroup<
 > {
     pub(crate) params: S::Vector<PARAMS>,
     phantom: core::marker::PhantomData<G>,
-}
-
-impl<
-        S: IsScalar<BATCH, DM, DN>,
-        const DOF: usize,
-        const PARAMS: usize,
-        const POINT: usize,
-        const AMBIENT: usize,
-        const BATCH: usize,
-        const DM: usize,
-        const DN: usize,
-        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
-    > IsParamsImpl<S, PARAMS, BATCH, DM, DN>
-    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
-{
-    fn are_params_valid<P>(params: P) -> S::Mask
-    where
-        P: for<'a> Borrow<S::Vector<PARAMS>>,
-    {
-        G::are_params_valid(params)
-    }
-
-    fn params_examples() -> alloc::vec::Vec<S::Vector<PARAMS>> {
-        G::params_examples()
-    }
-
-    fn invalid_params_examples() -> alloc::vec::Vec<S::Vector<PARAMS>> {
-        G::invalid_params_examples()
-    }
-}
-
-impl<
-        S: IsScalar<BATCH, DM, DN>,
-        const DOF: usize,
-        const PARAMS: usize,
-        const POINT: usize,
-        const AMBIENT: usize,
-        const BATCH: usize,
-        const DM: usize,
-        const DN: usize,
-        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
-    > HasParams<S, PARAMS, BATCH, DM, DN>
-    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
-{
-    fn from_params<P>(params: P) -> Self
-    where
-        P: for<'a> Borrow<S::Vector<PARAMS>>,
-    {
-        let params = params.borrow();
-
-        assert!(
-            G::are_params_valid(params).all(),
-            "Invalid parameters for {:?}",
-            params.real_vector()
-        );
-        Self {
-            params: G::disambiguate(*params),
-            phantom: core::marker::PhantomData,
-        }
-    }
-
-    fn set_params<P>(&mut self, params: P)
-    where
-        P: for<'a> Borrow<S::Vector<PARAMS>>,
-    {
-        let params = params.borrow();
-        self.params = G::disambiguate(*params);
-    }
-
-    fn params(&self) -> &S::Vector<PARAMS> {
-        &self.params
-    }
-}
-
-impl<
-        S: IsScalar<BATCH, DM, DN>,
-        const DOF: usize,
-        const PARAMS: usize,
-        const POINT: usize,
-        const AMBIENT: usize,
-        const BATCH: usize,
-        const DM: usize,
-        const DN: usize,
-        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
-    > IsTangent<S, DOF, BATCH, DM, DN>
-    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
-{
-    fn tangent_examples() -> alloc::vec::Vec<<S as IsScalar<BATCH, DM, DN>>::Vector<DOF>> {
-        G::tangent_examples()
-    }
-}
-
-impl<
-        S: IsScalar<BATCH, DM, DN>,
-        const DOF: usize,
-        const PARAMS: usize,
-        const POINT: usize,
-        const AMBIENT: usize,
-        const BATCH: usize,
-        const DM: usize,
-        const DN: usize,
-        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
-    > IsLieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>
-    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
-{
-    type G = G;
-    type GenG<S2: IsScalar<BATCH, DM, DN>> = G::GenG<S2>;
-    type RealG = G::RealG;
-    type DualG<const M: usize, const N: usize> = G::DualG<M, N>;
-
-    type GenGroup<
-        S2: IsScalar<BATCH, DM, DN>,
-        G2: IsLieGroupImpl<S2, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
-    > = LieGroup<S2, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G2>;
-    // type RealGroup = Self::GenGroup<S::RealScalar, G::RealG>;
-    // type DualGroup<const M: usize, const N: usize> = Self::GenGroup<S::DualScalar<M, N>, G::DualG<M,N>>;
-
-    const DOF: usize = DOF;
-
-    const PARAMS: usize = PARAMS;
-
-    const POINT: usize = POINT;
-
-    const AMBIENT: usize = AMBIENT;
 }
 
 impl<
@@ -187,7 +112,6 @@ impl<
     /// Interpolate between "(w-1) * self" and "w * other".
     ///
     /// w is typically in [0, 1]. If w=0, self is returned. If w=1 other is returned.
-    ///
     pub fn interpolate(&self, other: &Self, w: S) -> Self {
         self * &Self::exp((self.inverse() * other).log().scaled(w))
     }
@@ -347,7 +271,7 @@ impl<
 
             assert_relative_eq!(matrix_before, matrix_after, epsilon = 0.0001);
 
-            let t = g.clone().inverse().log().real_vector();
+            let t = g.inverse().log().real_vector();
             let t2 = -(g.log().real_vector());
             assert_relative_eq!(t, t2, epsilon = 0.0001);
         }
@@ -407,7 +331,8 @@ impl<
 
     /// run all tests
     pub fn test_suite() {
-        // Most tests will trivially pass if there are no examples. So first we make sure we have at least three per group.
+        // Most tests will trivially pass if there are no examples. So first we make sure we have at
+        // least three examples per group.
         let group_examples: alloc::vec::Vec<_> = Self::element_examples();
         assert!(group_examples.len() >= 3);
         let tangent_examples: alloc::vec::Vec<S::Vector<DOF>> = G::tangent_examples();
@@ -419,4 +344,126 @@ impl<
         Self::exp_tests();
         Self::adjoint_tests();
     }
+}
+
+impl<
+        S: IsScalar<BATCH, DM, DN>,
+        const DOF: usize,
+        const PARAMS: usize,
+        const POINT: usize,
+        const AMBIENT: usize,
+        const BATCH: usize,
+        const DM: usize,
+        const DN: usize,
+        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
+    > IsParamsImpl<S, PARAMS, BATCH, DM, DN>
+    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
+{
+    fn are_params_valid<P>(params: P) -> S::Mask
+    where
+        P: for<'a> Borrow<S::Vector<PARAMS>>,
+    {
+        G::are_params_valid(params)
+    }
+
+    fn params_examples() -> alloc::vec::Vec<S::Vector<PARAMS>> {
+        G::params_examples()
+    }
+
+    fn invalid_params_examples() -> alloc::vec::Vec<S::Vector<PARAMS>> {
+        G::invalid_params_examples()
+    }
+}
+
+impl<
+        S: IsScalar<BATCH, DM, DN>,
+        const DOF: usize,
+        const PARAMS: usize,
+        const POINT: usize,
+        const AMBIENT: usize,
+        const BATCH: usize,
+        const DM: usize,
+        const DN: usize,
+        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
+    > HasParams<S, PARAMS, BATCH, DM, DN>
+    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
+{
+    fn from_params<P>(params: P) -> Self
+    where
+        P: for<'a> Borrow<S::Vector<PARAMS>>,
+    {
+        let params = params.borrow();
+
+        assert!(
+            G::are_params_valid(params).all(),
+            "Invalid parameters for {:?}",
+            params.real_vector()
+        );
+        Self {
+            params: G::disambiguate(*params),
+            phantom: core::marker::PhantomData,
+        }
+    }
+
+    fn set_params<P>(&mut self, params: P)
+    where
+        P: for<'a> Borrow<S::Vector<PARAMS>>,
+    {
+        let params = params.borrow();
+        self.params = G::disambiguate(*params);
+    }
+
+    fn params(&self) -> &S::Vector<PARAMS> {
+        &self.params
+    }
+}
+
+impl<
+        S: IsScalar<BATCH, DM, DN>,
+        const DOF: usize,
+        const PARAMS: usize,
+        const POINT: usize,
+        const AMBIENT: usize,
+        const BATCH: usize,
+        const DM: usize,
+        const DN: usize,
+        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
+    > IsTangent<S, DOF, BATCH, DM, DN>
+    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
+{
+    fn tangent_examples() -> alloc::vec::Vec<<S as IsScalar<BATCH, DM, DN>>::Vector<DOF>> {
+        G::tangent_examples()
+    }
+}
+
+impl<
+        S: IsScalar<BATCH, DM, DN>,
+        const DOF: usize,
+        const PARAMS: usize,
+        const POINT: usize,
+        const AMBIENT: usize,
+        const BATCH: usize,
+        const DM: usize,
+        const DN: usize,
+        G: IsLieGroupImpl<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
+    > IsLieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>
+    for LieGroup<S, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G>
+{
+    type G = G;
+    type GenG<S2: IsScalar<BATCH, DM, DN>> = G::GenG<S2>;
+    type RealG = G::RealG;
+    type DualG<const M: usize, const N: usize> = G::DualG<M, N>;
+
+    type GenGroup<
+        S2: IsScalar<BATCH, DM, DN>,
+        G2: IsLieGroupImpl<S2, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN>,
+    > = LieGroup<S2, DOF, PARAMS, POINT, AMBIENT, BATCH, DM, DN, G2>;
+
+    const DOF: usize = DOF;
+
+    const PARAMS: usize = PARAMS;
+
+    const POINT: usize = POINT;
+
+    const AMBIENT: usize = AMBIENT;
 }

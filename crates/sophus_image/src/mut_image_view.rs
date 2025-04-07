@@ -1,7 +1,10 @@
-use crate::image_view::GenImageView;
-use crate::prelude::*;
-use crate::ImageSize;
-use sophus_tensor::mut_tensor_view::MutTensorView;
+use sophus_tensor::MutTensorView;
+
+use crate::{
+    image_view::GenImageView,
+    prelude::*,
+    ImageSize,
+};
 
 /// Mutable image view of a static tensors
 #[derive(Debug, PartialEq)]
@@ -20,9 +23,6 @@ pub struct GenMutImageView<
     pub mut_tensor_view: MutTensorView<'a, TOTAL_RANK, 2, SRANK, Scalar, STensor, ROWS, COLS>,
 }
 
-/// Mutable image view of scalar values
-pub type MutImageView<'a, Scalar> = GenMutImageView<'a, 2, 0, Scalar, Scalar, 1, 1>;
-
 macro_rules! mut_image_view {
     ($scalar_rank:literal, $srank:literal) => {
         impl<
@@ -38,8 +38,8 @@ macro_rules! mut_image_view {
         {
             fn pixel(&'a self, u: usize, v: usize) -> STensor {
                 // NOTE:
-                // We are converting from Image Indexing Convention (d0 = u = col_idx, d1 = v = row_idx)
-                // to tensor (and matrix) convention (d0 = rows, d1 = cols).
+                // We are converting from Image Indexing Convention (d0 = u = col_idx, d1 = v =
+                // row_idx) to tensor / matrix convention (d0 = rows, d1 = cols).
                 self.mut_tensor_view.get([v, u])
             }
 
@@ -89,8 +89,8 @@ macro_rules! mut_image_view {
 
             fn mut_pixel(&'a mut self, u: usize, v: usize) -> &'a mut STensor {
                 // NOTE:
-                // We are converting from Image Indexing Convention (d0 = u = col_idx, d1 = v = row_idx)
-                // to tensor (and matrix) convention (d0 = rows, d1 = cols).
+                // We are converting from Image Indexing Convention (d0 = u = col_idx, d1 = v =
+                // row_idx) to tensor (and matrix) convention (d0 = rows, d1 = cols).
                 self.mut_tensor_view.get_mut([v, u])
             }
         }

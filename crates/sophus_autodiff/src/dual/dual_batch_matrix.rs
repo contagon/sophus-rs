@@ -1,25 +1,57 @@
-use crate::dual::dual_batch_scalar::DualBatchScalar;
-use crate::dual::DualBatchVector;
-use crate::linalg::batch_mask::BatchMask;
-use crate::linalg::BatchMatF64;
-use crate::linalg::BatchScalarF64;
-use crate::linalg::SMat;
-use crate::prelude::*;
-use approx::AbsDiffEq;
-use approx::RelativeEq;
-use core::borrow::Borrow;
-use core::fmt::Debug;
-use core::ops::Add;
-use core::ops::Mul;
-use core::ops::Neg;
-use core::ops::Sub;
-use core::simd::LaneCount;
-use core::simd::SupportedLaneCount;
+use core::{
+    borrow::Borrow,
+    fmt::Debug,
+    ops::{
+        Add,
+        Mul,
+        Neg,
+        Sub,
+    },
+    simd::{
+        LaneCount,
+        SupportedLaneCount,
+    },
+};
+
+use approx::{
+    AbsDiffEq,
+    RelativeEq,
+};
 use num_traits::Zero;
 
 use super::matrix::MatrixValuedDerivative;
+use crate::{
+    dual::{
+        DualBatchScalar,
+        DualBatchVector,
+    },
+    linalg::{
+        BatchMask,
+        BatchMatF64,
+        BatchScalarF64,
+        SMat,
+    },
+    prelude::*,
+};
 
-/// DualScalarLike matrix
+/// A batch dual matrix, whose elements are [DualBatchScalar] (forward-mode AD) across multiple
+/// lanes.
+///
+/// This implements vector functionality for `ℝʳ` *with* partial derivatives,
+/// in parallel lanes (SIMD). Each element is a `DualBatchScalar<BATCH, DM, DN>` storing:
+///
+/// - `BATCH`: The number of SIMD lanes.
+/// - `DM`, `DN`: The shape of each element’s derivative.
+///
+/// # Private fields
+/// - `inner`: A `ROWS x COLS` [SMat], each item a [`DualBatchScalar<DM, DN>`].
+///
+/// # Example
+/// For `ROWS=3, COLS=2, BATCH=4, DM=3, DN=1`, you have 3x2 elements, each storing 4-lane real parts
+/// plus a 3×1 derivative for each lane, i.e. 4-lane forward-mode AD on a 3x2 matrix input.
+///
+/// See [crate::dual::IsDualMatrix] for more details.
+#[cfg(feature = "simd")]
 #[derive(Clone, Debug, Copy)]
 pub struct DualBatchMatrix<
     const ROWS: usize,
@@ -71,6 +103,25 @@ where
             }
         }
         MatrixValuedDerivative { out_mat: v }
+    }
+}
+
+impl<const ROWS: usize, const COLS: usize, const BATCH: usize>
+    IsDualMatrixFromCurve<DualBatchScalar<BATCH, 1, 1>, ROWS, COLS, BATCH>
+    for DualBatchMatrix<ROWS, COLS, BATCH, 1, 1>
+where
+    BatchScalarF64<BATCH>: IsCoreScalar,
+    LaneCount<BATCH>: SupportedLaneCount,
+{
+    fn curve_derivative(&self) -> BatchMatF64<ROWS, COLS, BATCH> {
+        let mut out = BatchMatF64::<ROWS, COLS, BATCH>::zeros();
+
+        for i in 0..ROWS {
+            for j in 0..COLS {
+                *out.elem_mut([i, j]) = self.inner[(i, j)].derivative()[(0, 0)];
+            }
+        }
+        out
     }
 }
 
@@ -206,8 +257,12 @@ where
         DualBatchMatrix::from_real_matrix(BatchMatF64::<ROWS, COLS, BATCH>::identity())
     }
 
-    fn get_elem(&self, idx: [usize; 2]) -> DualBatchScalar<BATCH, DM, DN> {
+    fn elem(&self, idx: [usize; 2]) -> DualBatchScalar<BATCH, DM, DN> {
         self.inner[(idx[0], idx[1])]
+    }
+
+    fn elem_mut(&mut self, idx: [usize; 2]) -> &mut DualBatchScalar<BATCH, DM, DN> {
+        &mut self.inner[(idx[0], idx[1])]
     }
 
     fn from_array2<A>(duals: A) -> Self
@@ -371,15 +426,11 @@ where
         let other = other.borrow();
         for i in 0..ROWS {
             for j in 0..COLS {
-                v[(i, j)] = self.get_elem([i, j]).select(mask, other.get_elem([i, j]));
+                v[(i, j)] = self.elem([i, j]).select(mask, other.elem([i, j]));
             }
         }
 
         Self { inner: v }
-    }
-
-    fn set_elem(&mut self, idx: [usize; 2], val: DualBatchScalar<BATCH, DM, DN>) {
-        self.inner[(idx[0], idx[1])] = val;
     }
 
     fn transposed(

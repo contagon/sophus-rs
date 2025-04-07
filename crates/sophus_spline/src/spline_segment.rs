@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
-use sophus_autodiff::prelude::*;
 
+use sophus_autodiff::prelude::*;
 /// cubic basis function
 pub struct CubicBasisFunction<S, const DM: usize, const DN: usize> {
     phantom: PhantomData<S>,
@@ -69,9 +69,9 @@ impl<S: IsSingleScalar<DM, DN>, const DIMS: usize, const DM: usize, const DN: us
     ) -> S::SingleVector<DIMS> {
         let b = CubicBasisFunction::<S, DM, DN>::b(u);
         control_point
-            + control_points[0].scaled(b.get_elem(0))
-            + control_points[1].scaled(b.get_elem(1))
-            + control_points[2].scaled(b.get_elem(2))
+            + control_points[0].scaled(b.elem(0))
+            + control_points[1].scaled(b.elem(1))
+            + control_points[2].scaled(b.elem(2))
     }
 
     fn dxi_interpolate(u: S, quadruple_idx: usize) -> S::SingleMatrix<DIMS, DIMS> {
@@ -79,7 +79,7 @@ impl<S: IsSingleScalar<DM, DN>, const DIMS: usize, const DM: usize, const DN: us
         if quadruple_idx == 0 {
             S::SingleMatrix::<DIMS, DIMS>::identity()
         } else {
-            S::SingleMatrix::<DIMS, DIMS>::identity().scaled(b.get_elem(quadruple_idx - 1))
+            S::SingleMatrix::<DIMS, DIMS>::identity().scaled(b.elem(quadruple_idx - 1))
         }
     }
 }
@@ -187,15 +187,22 @@ mod test {
 
     #[test]
     fn test_spline_basis_fn() {
-        use crate::spline_segment::CubicBSplineFn;
         use num_traits::Zero;
-        use sophus_autodiff::dual::dual_scalar::DualScalar;
-        use sophus_autodiff::dual::dual_vector::DualVector;
-        use sophus_autodiff::linalg::scalar::IsScalar;
-        use sophus_autodiff::linalg::vector::IsVector;
-        use sophus_autodiff::linalg::VecF64;
-        use sophus_autodiff::maps::vector_valued_maps::VectorValuedVectorMap;
-        use sophus_autodiff::points::example_points;
+        use sophus_autodiff::{
+            dual::{
+                DualScalar,
+                DualVector,
+            },
+            linalg::{
+                IsScalar,
+                IsVector,
+                VecF64,
+            },
+            points::example_points,
+            prelude::*,
+        };
+
+        use crate::spline_segment::CubicBSplineFn;
 
         let points = &example_points::<f64, 3, 1, 0, 0>();
         assert!(points.len() >= 8);
@@ -228,11 +235,7 @@ mod test {
                         DualScalar::from_real_scalar(u),
                     )
                 };
-                let auto_dx0 =
-                    VectorValuedVectorMap::<DualScalar<3, 1>, 1, 3, 1>::fw_autodiff_jacobian(
-                        f0,
-                        first_control_point,
-                    );
+                let auto_dx0 = f0(DualVector::var(first_control_point)).jacobian();
                 let analytic_dx0 = CubicBSplineFn::<f64, 3, 0, 0>::dxi_interpolate(u, 0);
                 approx::assert_abs_diff_eq!(auto_dx0, analytic_dx0, epsilon = 0.0001);
 
@@ -246,11 +249,7 @@ mod test {
                             DualScalar::from_real_scalar(u),
                         )
                     };
-                    let auto_dxi =
-                        VectorValuedVectorMap::<DualScalar<3, 1>, 1, 3, 1>::fw_autodiff_jacobian(
-                            fi,
-                            segment_control_points[i],
-                        );
+                    let auto_dxi = fi(DualVector::var(segment_control_points[i])).jacobian();
                     let analytic_dxi = CubicBSplineFn::<f64, 3, 0, 0>::dxi_interpolate(u, i + 1);
                     approx::assert_abs_diff_eq!(auto_dxi, analytic_dxi, epsilon = 0.0001);
                 }
@@ -261,16 +260,26 @@ mod test {
 
     #[test]
     fn test_spline_segment() {
-        use crate::CubicBSplineSegment;
-        use crate::SegmentCase;
         use num_traits::Zero;
-        use sophus_autodiff::dual::dual_scalar::DualScalar;
-        use sophus_autodiff::dual::dual_vector::DualVector;
-        use sophus_autodiff::linalg::scalar::IsScalar;
-        use sophus_autodiff::linalg::vector::IsVector;
-        use sophus_autodiff::linalg::VecF64;
-        use sophus_autodiff::maps::vector_valued_maps::VectorValuedVectorMap;
-        use sophus_autodiff::points::example_points;
+        use sophus_autodiff::{
+            dual::{
+                DualScalar,
+                DualVector,
+            },
+            linalg::{
+                IsScalar,
+                IsVector,
+                VecF64,
+            },
+            maps::VectorValuedVectorMap,
+            points::example_points,
+            prelude::*,
+        };
+
+        use crate::{
+            CubicBSplineSegment,
+            SegmentCase,
+        };
 
         let points = &example_points::<f64, 3, 1, 0, 0>();
         assert!(points.len() >= 8);
@@ -322,10 +331,7 @@ mod test {
                             base_dual.interpolate(DualScalar::from_real_scalar(u))
                         };
 
-                        let auto_dx = VectorValuedVectorMap::<DualScalar<3,1>, 1,3,1>::fw_autodiff_jacobian(
-                            f,
-                            segment_control_points[i],
-                        );
+                        let auto_dx = f(DualVector::var(segment_control_points[i])).jacobian();
 
                         approx::assert_abs_diff_eq!(analytic_dx, num_dx, epsilon = 0.0001);
                         approx::assert_abs_diff_eq!(analytic_dx, auto_dx, epsilon = 0.0001);

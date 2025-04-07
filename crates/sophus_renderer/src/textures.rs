@@ -1,18 +1,15 @@
-use crate::textures::depth::DepthTextures;
-use crate::textures::rgba::RgbdTexture;
-use crate::RenderContext;
+mod depth;
+mod depth_image;
+mod ndc_z_buffer;
+mod rgba;
+mod visual_depth;
+
+pub(crate) use depth::DepthTextures;
+pub use depth_image::*;
+pub use rgba::*;
 use sophus_image::ImageSize;
 
-/// depth textures
-pub mod depth;
-/// depth image
-pub mod depth_image;
-/// NDC z buffer textures
-pub mod ndc_z_buffer;
-/// RGBA textures
-pub mod rgba;
-/// Visual depth texture
-pub mod visual_depth;
+use crate::RenderContext;
 
 #[derive(Debug)]
 pub(crate) struct Textures {

@@ -1,23 +1,14 @@
 // ported from https://github.com/farm-ng/farm-ng-core/tree/main/rs/plotting/src/graphs
 
-use crate::packets::plot_view_packet::curve_vec_with_conf::CurveVecWithConf;
-use crate::packets::plot_view_packet::curve_vec_with_conf::CurveVecWithConfStyle;
-use crate::packets::plot_view_packet::curve_vec_with_conf::DataVecDeque;
-use crate::packets::plot_view_packet::curve_vec_with_conf::NamedVecConfCurve;
-use crate::packets::plot_view_packet::scalar_curve::NamedScalarCurve;
-use crate::packets::plot_view_packet::scalar_curve::ScalarCurve;
-use crate::packets::plot_view_packet::scalar_curve::ScalarCurveStyle;
-use crate::packets::plot_view_packet::vec_curve::CurveVec;
-use crate::packets::plot_view_packet::vec_curve::CurveVecStyle;
-use crate::packets::plot_view_packet::vec_curve::NamedCurveVec;
-use crate::prelude::*;
+mod curve_vec_with_conf;
+mod scalar_curve;
+mod vec_curve;
 
-/// vec curve with confidence interval
-pub mod curve_vec_with_conf;
-/// scalar curve
-pub mod scalar_curve;
-/// vec curve
-pub mod vec_curve;
+pub use curve_vec_with_conf::*;
+pub use scalar_curve::*;
+pub use vec_curve::*;
+
+use crate::prelude::*;
 
 /// clear condition
 #[derive(Copy, Clone, Debug)]

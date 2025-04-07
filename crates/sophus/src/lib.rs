@@ -1,6 +1,11 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(clippy::needless_range_loop)]
 #![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
+
+#[doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
 
 #[doc(inline)]
 pub use sophus_autodiff as autodiff;
@@ -27,16 +32,30 @@ pub use sophus_timeseries as timeseries;
 #[doc(inline)]
 pub use sophus_viewer as viewer;
 
+/// Non-comprehensive list of examples.
+///
+/// This is *not a comprehensive list* of examples for the *sophus umbrella crate*.
+/// The current focus is on the sophus render and camera simulation modules. Most
+/// usage examples are found in the individual sub-crates. In particular, the
+/// unit tests in each sub-crate are a good source of examples.
 pub mod examples;
 pub use eframe;
-pub use thingbuf;
-
 pub use nalgebra;
 pub use ndarray;
+pub use thingbuf;
 
+/// sophus prelude.
+///
+/// It is recommended to import this prelude when working with `sophus` types:
+///
+/// ```
+/// use sophus::prelude::*;
+/// ```
 pub mod prelude {
-    pub use crate::autodiff::prelude::*;
-    pub use crate::image::prelude::*;
-    pub use crate::lie::prelude::*;
-    pub use crate::opt::prelude::*;
+    pub use crate::{
+        autodiff::prelude::*,
+        image::prelude::*,
+        lie::prelude::*,
+        opt::prelude::*,
+    };
 }

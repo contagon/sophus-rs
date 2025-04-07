@@ -1,47 +1,95 @@
-use crate::quadratic_cost::cost_fn::IsCostFn;
-use crate::quadratic_cost::evaluated_cost::IsEvaluatedCost;
-use crate::solvers::normal_equation::solve;
-use crate::solvers::normal_equation::SolveError;
-use crate::solvers::normal_equation::TripletType;
-use crate::solvers::sparse_ldlt::SparseLdltParams;
-use crate::variables::VarPool;
-use core::fmt::Debug;
-use log::debug;
-use log::info;
-
 extern crate alloc;
+
+mod constraint;
+mod cost;
+mod functor_library;
+mod linear_system;
+
+use core::fmt::Debug;
+
+pub use constraint::{
+    eq_constraint::*,
+    eq_constraint_fn::*,
+    evaluated_eq_constraint::*,
+    evaluated_eq_set::*,
+};
+pub use cost::{
+    cost_fn::*,
+    cost_term::*,
+    evaluated_cost::*,
+    evaluated_term::*,
+};
+pub(crate) use linear_system::solvers::*;
+pub use linear_system::{
+    cost_system::*,
+    eq_system::*,
+    *,
+};
+use log::{
+    debug,
+    info,
+};
+use snafu::Snafu;
+
+use self::sparse_ldlt::SparseLdltParams;
+pub use crate::nlls::functor_library::{
+    costs,
+    eq_constraints,
+};
+use crate::{
+    block::{
+        block_vector::BlockVector,
+        symmetric_block_sparse_matrix_builder::SymmetricBlockSparseMatrixBuilder,
+    },
+    variables::VarFamilies,
+};
 
 /// Linear solver type
 #[derive(Copy, Clone, Debug)]
 pub enum LinearSolverType {
     /// Sparse LDLT solver (using faer crate)
-    FaerSparseLdlt(SparseLdltParams),
+    SparseLdlt(SparseLdltParams),
     /// Sparse partial pivoting LU solver (using faer crate)
-    FaerSparsePartialPivLu,
+    SparseLu,
     /// Sparse QR solver (using faer crate)
-    FaerSparseQR,
-    /// Dense cholesky (using nalgebra crate)
-    NalgebraDenseCholesky,
-    /// Dense full-piovt. LU solver (using nalgebra crate)
-    NalgebraDenseFullPiVLu,
+    SparseQr,
+    /// Dense full-pivot. LU solver (using nalgebra crate)
+    DenseLu,
+}
+
+impl LinearSolverType {
+    /// Get all available solvers
+    pub fn all_solvers() -> Vec<LinearSolverType> {
+        vec![
+            LinearSolverType::SparseLdlt(Default::default()),
+            LinearSolverType::SparseLu,
+            LinearSolverType::SparseQr,
+            LinearSolverType::DenseLu,
+        ]
+    }
+
+    /// Get all sparse solvers
+    pub fn sparse_solvers() -> Vec<LinearSolverType> {
+        vec![
+            LinearSolverType::SparseLdlt(Default::default()),
+            LinearSolverType::SparseLu,
+            LinearSolverType::SparseQr,
+        ]
+    }
+
+    /// Get solvers which can be used for indefinite systems
+    pub fn indefinite_solvers() -> Vec<LinearSolverType> {
+        vec![
+            LinearSolverType::SparseLu,
+            LinearSolverType::SparseQr,
+            LinearSolverType::DenseLu,
+        ]
+    }
 }
 
 impl Default for LinearSolverType {
     fn default() -> Self {
-        LinearSolverType::FaerSparseLdlt(Default::default())
-    }
-}
-
-impl LinearSolverType {
-    /// Get the triplet type
-    pub fn triplet_type(&self) -> TripletType {
-        match self {
-            LinearSolverType::FaerSparseLdlt(_) => TripletType::Upper,
-            LinearSolverType::FaerSparsePartialPivLu => TripletType::Full,
-            LinearSolverType::FaerSparseQR => TripletType::Full,
-            LinearSolverType::NalgebraDenseCholesky => TripletType::Full,
-            LinearSolverType::NalgebraDenseFullPiVLu => TripletType::Full,
-        }
+        LinearSolverType::SparseLdlt(Default::default())
     }
 }
 
@@ -49,107 +97,214 @@ impl LinearSolverType {
 #[derive(Copy, Clone, Debug)]
 pub struct OptParams {
     /// number of iterations
-    pub num_iter: usize,
-    /// initial value of the Levenberg-Marquardt regularization parameter
-    pub initial_lm_nu: f64,
+    ///
+    /// This is currently the only stopping criterion.
+    /// TODO: Add additional stopping criteria.
+    pub num_iterations: usize,
+    /// Initial value of the Levenberg-Marquardt regularization parameter
+    pub initial_lm_damping: f64,
     /// whether to use parallelization
     pub parallelize: bool,
-    /// linear solver type
-    pub linear_solver: LinearSolverType,
     /// relative error tolerance
     pub error_tol_relative: f64,
     /// absolute error tolerance
     pub error_tol_absolute: f64,
     /// error tolerance
     pub error_tol: f64,
+    /// linear solver type
+    pub solver: LinearSolverType,
 }
 
 impl Default for OptParams {
     fn default() -> Self {
         Self {
-            num_iter: 20,
-            initial_lm_nu: 10.0,
+            num_iterations: 20,
+            initial_lm_damping: 10.0,
             parallelize: true,
-            linear_solver: Default::default(),
             error_tol_relative: 1e-6,
             error_tol_absolute: 1e-6,
             error_tol: 0.0,
+            solver: Default::default(),
         }
     }
 }
 
-/// Non-linear least squares optimization
-pub fn optimize(
-    mut variables: VarPool,
-    mut cost_fns: alloc::vec::Vec<alloc::boxed::Box<dyn IsCostFn>>,
+fn evaluate_cost_and_build_linear_system(
+    variables: &VarFamilies,
+    cost_system: &mut CostSystem,
+    eq_system: &mut EqSystem,
     params: OptParams,
-) -> Result<VarPool, SolveError> {
-    let mut init_costs: alloc::vec::Vec<alloc::boxed::Box<dyn IsEvaluatedCost>> =
-        alloc::vec::Vec::new();
+) -> Result<LinearSystem, NllsError> {
+    let eval_mode = EvalMode::CalculateDerivatives;
+    cost_system
+        .eval(variables, eval_mode, params)
+        .map_err(|e| NllsError::NllsCostSystemError { details: e })?;
+    eq_system
+        .eval(variables, eval_mode, params)
+        .map_err(|e| NllsError::NllsEqConstraintSystemError { details: e })?;
 
-    for cost_fn in cost_fns.iter_mut() {
-        // sort to achieve more efficient evaluation and reduction
-        cost_fn.sort(&variables);
-        init_costs.push(cost_fn.eval(&variables, false, params.parallelize));
+    Ok(LinearSystem::from_families_costs_and_constraints(
+        variables,
+        cost_system,
+        eq_system,
+        params.solver,
+    ))
+}
+
+/// Optimization solution
+pub struct OptimizationSolution {
+    /// The optimized variables
+    pub variables: VarFamilies,
+    /// The final cost
+    pub final_cost: f64,
+    /// the gradient vector
+    pub final_neg_gradient: BlockVector,
+    /// the hessian matrix
+    pub final_hessian_plus_damping: SymmetricBlockSparseMatrixBuilder,
+}
+
+/// Linear solver error
+#[derive(Snafu, Debug)]
+pub enum NllsError {
+    /// Sparse LDLt error
+    #[snafu(display("sparse LDLt error {}", details))]
+    SparseLdltError {
+        /// details
+        details: SparseSolverError,
+    },
+    /// Sparse LU error
+    #[snafu(display("sparse LU error {}", details))]
+    SparseLuError {
+        /// details
+        details: SparseSolverError,
+    },
+    /// Sparse QR error
+    #[snafu(display("sparse QR error {}", details))]
+    SparseQrError {
+        /// details
+        details: SparseSolverError,
+    },
+    /// Dense LU error
+    #[snafu(display("dense LU solve failed"))]
+    DenseLuError,
+
+    /// Quadratic cost system error
+    #[snafu(display("{}", details))]
+    NllsCostSystemError {
+        /// details
+        details: CostError,
+    },
+    /// Eq constraint system error
+    #[snafu(display("{}", details))]
+    NllsEqConstraintSystemError {
+        /// details
+        details: EqConstraintError,
+    },
+}
+
+/// Non-linear least squares optimization
+pub fn optimize_nlls(
+    variables: VarFamilies,
+    cost_fns: alloc::vec::Vec<alloc::boxed::Box<dyn IsCostFn>>,
+    params: OptParams,
+) -> Result<OptimizationSolution, NllsError> {
+    optimize_nlls_with_eq_constraints(variables, cost_fns, vec![], params)
+}
+
+// calculate the merit value - at this point just the cost
+pub(crate) fn calc_merit(
+    variables: &VarFamilies,
+    cost_system: &mut CostSystem,
+    _eq_system: &mut EqSystem,
+    params: OptParams,
+) -> Result<f64, NllsError> {
+    cost_system
+        .eval(variables, EvalMode::DontCalculateDerivatives, params)
+        .map_err(|e| NllsError::NllsCostSystemError { details: e })?;
+    let mut c = 0.0;
+    for cost in cost_system.evaluated_costs.iter() {
+        c += cost.calc_square_error();
     }
+    Ok(c)
+}
 
-    let mut nu = params.initial_lm_nu;
+/// Non-linear least squares optimization with equality constraints
+pub fn optimize_nlls_with_eq_constraints(
+    mut variables: VarFamilies,
+    cost_fns: alloc::vec::Vec<alloc::boxed::Box<dyn IsCostFn>>,
+    eq_constraints_fns: alloc::vec::Vec<alloc::boxed::Box<dyn IsEqConstraintsFn>>,
+    params: OptParams,
+) -> Result<OptimizationSolution, NllsError> {
+    let mut cost_system = CostSystem::new(&variables, cost_fns, params)
+        .map_err(|e| NllsError::NllsCostSystemError { details: e })?;
+    let mut eq_system = EqSystem::new(&variables, eq_constraints_fns, params)
+        .map_err(|e| NllsError::NllsEqConstraintSystemError { details: e })?;
 
-    let mut mse = 0.0;
-    for init_cost in init_costs.iter() {
-        mse += init_cost.calc_square_error();
-    }
-    let initial_mse = mse;
+    let mut merit = calc_merit(&variables, &mut cost_system, &mut eq_system, params)?;
+    let initial_merit = merit;
 
-    for i in 0..params.num_iter {
-        let mut evaluated_costs: alloc::vec::Vec<alloc::boxed::Box<dyn IsEvaluatedCost>> =
-            alloc::vec::Vec::new();
-        for cost_fn in cost_fns.iter_mut() {
-            evaluated_costs.push(cost_fn.eval(&variables, true, params.parallelize));
-        }
+    for i in 0..params.num_iterations {
+        debug!("lm-damping: {}", cost_system.lm_damping);
+        let mut linear_system = evaluate_cost_and_build_linear_system(
+            &variables,
+            &mut cost_system,
+            &mut eq_system,
+            params,
+        )?;
 
-        let updated_families = solve(&variables, evaluated_costs, nu, params.linear_solver)?;
+        let delta = linear_system.solve()?;
+        let updated_families = variables.update(&delta);
+        let updated_lambdas = eq_system.update_lambdas(&variables, &delta);
 
-        let mut new_costs: alloc::vec::Vec<alloc::boxed::Box<dyn IsEvaluatedCost>> =
-            alloc::vec::Vec::new();
-        for cost_fn in cost_fns.iter_mut() {
-            new_costs.push(cost_fn.eval(&updated_families, true, params.parallelize));
-        }
-        let mut new_mse = 0.0;
-        for init_cost in new_costs.iter() {
-            new_mse += init_cost.calc_square_error();
-        }
+        let new_merit = calc_merit(&updated_families, &mut cost_system, &mut eq_system, params)?;
 
-        let mse_decrease_abs = mse - new_mse;
-        let mse_decrease_rel = mse_decrease_abs / mse;
+        let merit_decrease_abs = merit - new_merit;
+        let merit_decrease_rel = merit_decrease_abs / merit;
 
-        if new_mse < params.error_tol {
+        if new_merit < params.error_tol {
             debug!("Error is below tolerance, stopping optimization");
             break;
         }
-        if mse_decrease_abs < params.error_tol_absolute {
+        if merit_decrease_abs < params.error_tol_absolute {
             debug!("Error decrease is below absolute tolerance, stopping optimization");
             break;
         }
-        if mse_decrease_rel < params.error_tol_relative {
+        if merit_decrease_rel < params.error_tol_relative {
             debug!("Error decrease is below relative tolerance, stopping optimization");
             break;
         }
 
-        if new_mse < mse {
-            nu *= 0.0333;
+        if new_merit < merit {
+            cost_system.lm_damping *= 0.0333;
             variables = updated_families;
-            mse = new_mse;
+            eq_system.lambda = updated_lambdas;
+            merit = new_merit;
         } else {
-            nu *= 2.0;
+            cost_system.lm_damping *= 2.0;
         }
 
-        debug!(
-            "i: {:?}, nu: {:?}, mse {:?}, (new_mse {:?})",
-            i, nu, mse, new_mse
+        info!(
+            "i: {:?}, lm-damping: {:?}, merit {:?}, (new_merit {:?})",
+            i, cost_system.lm_damping, merit, new_merit
         );
     }
-    info!("e^2: {:?} -> {:?}", initial_mse, mse);
+    info!("e^2: {:?} -> {:?}", initial_merit, merit);
 
-    Ok(variables)
+    // Calculate the final gradient and hessian. This is not strictly necessary, but it is useful
+    // for debugging, and not too expensive.
+    // TODO: Consider making this optional, i.e. only return the final gradient and hessian if
+    // requested.
+    let final_linear_system = evaluate_cost_and_build_linear_system(
+        &variables,
+        &mut cost_system,
+        &mut eq_system,
+        params,
+    )?;
+
+    Ok(OptimizationSolution {
+        variables,
+        final_cost: merit,
+        final_neg_gradient: final_linear_system.neg_gradient,
+        final_hessian_plus_damping: final_linear_system.sparse_hessian_plus_damping,
+    })
 }

@@ -1,12 +1,16 @@
+use sophus_autodiff::linalg::{
+    MatF64,
+    VecF64,
+};
+use sophus_lie::{
+    prelude::*,
+    Isometry2,
+    Isometry2F64,
+    Isometry3,
+    Isometry3F64,
+};
+
 use crate::unit_vector::UnitVector;
-use sophus_autodiff::linalg::MatF64;
-use sophus_autodiff::linalg::VecF64;
-use sophus_lie::prelude::*;
-use sophus_lie::Isometry2;
-use sophus_lie::Isometry2F64;
-use sophus_lie::Isometry3;
-use sophus_lie::Isometry3F64;
-use std::borrow::Borrow;
 
 /// N-dimensional Hyperplane.
 pub struct HyperPlane<
@@ -34,12 +38,11 @@ impl<
 {
     /// Projects a point onto the hyperplane.
     ///
-    /// Given a N-d point, this function is projecting the point onto the hyperplane (along the planar
-    /// normal) and returning the result.
-    pub fn proj_onto<B: Borrow<S::Vector<DIM>>>(&self, point: B) -> S::Vector<DIM> {
-        let point = point.borrow();
-        let diff = *point - self.origin;
-        *point - self.normal.vector().scaled(diff.dot(self.normal.vector()))
+    /// Given a N-d point, this function is projecting the point onto the hyperplane (along the
+    /// planar normal) and returning the result.
+    pub fn proj_onto(&self, point: S::Vector<DIM>) -> S::Vector<DIM> {
+        let diff = point - self.origin;
+        point - self.normal.vector().scaled(diff.dot(self.normal.vector()))
     }
 
     /// Returns the Jacobian of `proj_onto(point)` w.r.t. `point` itself.
@@ -54,9 +57,8 @@ impl<
     }
 
     /// Distance of a point to the hyperplane.
-    pub fn distance<B: Borrow<S::Vector<DIM>>>(&self, point: B) -> S {
-        let point = point.borrow();
-        (self.proj_onto(point) - *point).norm()
+    pub fn distance(&self, point: S::Vector<DIM>) -> S {
+        (self.proj_onto(point) - point).norm()
     }
 }
 
@@ -64,7 +66,7 @@ impl<
 pub type Line<S, const B: usize, const DM: usize, const DN: usize> = HyperPlane<S, 1, 2, B, DM, DN>;
 /// A line in 2D - for f64.
 pub type LineF64 = Line<f64, 1, 0, 0>;
-// A plane in 3D - represented as a 3d hyperplane.
+/// A plane in 3D - represented as a 3d hyperplane.
 pub type Plane<S, const B: usize, const DM: usize, const DN: usize> =
     HyperPlane<S, 2, 3, B, DM, DN>;
 /// A plane in 3D - for f64.
@@ -78,10 +80,7 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
     /// Given an isometry "parent_from_line_origin", this function creates a line spanned by the
     /// X axis of the "line_origin" frame. The line is specified relative to the "parent"
     /// frame.
-    pub fn from_isometry2<B: Borrow<Isometry2<S, BATCH, DM, DN>>>(
-        parent_from_line_origin: B,
-    ) -> Self {
-        let parent_from_line_origin = parent_from_line_origin.borrow();
+    pub fn from_isometry2(parent_from_line_origin: Isometry2<S, BATCH, DM, DN>) -> Self {
         Line {
             origin: parent_from_line_origin.translation(),
             normal: UnitVector::from_vector_and_normalize(
@@ -99,10 +98,7 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
     /// Given an isometry "parent_from_plane_origin", this function creates a plane spanned by the
     /// X-Y axis of the "plane_origin" frame. The plane is specified relative to the "parent"
     /// frame.
-    pub fn from_isometry3<B: Borrow<Isometry3<S, BATCH, DM, DN>>>(
-        parent_from_plane_origin: B,
-    ) -> Self {
-        let parent_from_plane_origin = parent_from_plane_origin.borrow();
+    pub fn from_isometry3(parent_from_plane_origin: Isometry3<S, BATCH, DM, DN>) -> Self {
         Plane {
             origin: parent_from_plane_origin.translation(),
             normal: UnitVector::from_vector_and_normalize(
@@ -180,10 +176,17 @@ impl PlaneF64 {
 
 #[test]
 fn plane_test() {
-    use sophus_autodiff::dual::DualScalar;
-    use sophus_autodiff::linalg::VecF64;
-    use sophus_autodiff::linalg::EPS_F64;
-    use sophus_autodiff::maps::VectorValuedVectorMap;
+    use sophus_autodiff::{
+        dual::{
+            DualScalar,
+            DualVector,
+        },
+        linalg::{
+            VecF64,
+            EPS_F64,
+        },
+        maps::VectorValuedVectorMap,
+    };
     {
         let plane = Plane::<f64, 1, 0, 0>::from_isometry3(Isometry3::rot_y(0.2));
 
@@ -206,15 +209,12 @@ fn plane_test() {
             sophus_autodiff::nalgebra::Const<1>,
             sophus_autodiff::nalgebra::ArrayStorage<f64, 3, 1>,
         > = VecF64::<3>::new(1.0, 2.0, 3.0);
-        let finite_diff = VectorValuedVectorMap::<f64, 1, 0, 0>::sym_diff_quotient_jacobian(
+        let finite_diff = VectorValuedVectorMap::<f64, 1>::sym_diff_quotient_jacobian(
             proj_x_onto::<f64, 1, 0, 0>,
             a,
             EPS_F64,
         );
-        let auto_grad = VectorValuedVectorMap::<DualScalar<3, 1>, 1, 3, 1>::fw_autodiff_jacobian(
-            proj_x_onto::<DualScalar<3, 1>, 1, 3, 1>,
-            a,
-        );
+        let auto_grad = proj_x_onto::<DualScalar<3, 1>, 1, 3, 1>(DualVector::var(a)).jacobian();
 
         approx::assert_abs_diff_eq!(finite_diff, auto_grad, epsilon = 0.00001);
         approx::assert_abs_diff_eq!(plane.dx_proj_x_onto(), auto_grad, epsilon = 0.00001);
@@ -235,10 +235,8 @@ fn plane_test() {
             }
 
             let auto_grad =
-                VectorValuedVectorMap::<DualScalar<6, 1>, 1, 6, 1>::fw_autodiff_jacobian(
-                    proj_x_onto::<DualScalar<6, 1>, 1, 6, 1>,
-                    VecF64::zeros(),
-                );
+                proj_x_onto::<DualScalar<6, 1>, 1, 6, 1>(DualVector::var(VecF64::zeros()))
+                    .jacobian();
 
             approx::assert_abs_diff_eq!(
                 Plane::dx_proj_onto_plane_at_0(
@@ -269,10 +267,8 @@ fn plane_test() {
             line.proj_onto(a)
         }
 
-        let auto_grad = VectorValuedVectorMap::<DualScalar<3, 1>, 1, 3, 1>::fw_autodiff_jacobian(
-            proj_x_onto::<DualScalar<3, 1>, 1, 3, 1>,
-            VecF64::zeros(),
-        );
+        let auto_grad =
+            proj_x_onto::<DualScalar<3, 1>, 1, 3, 1>(DualVector::var(VecF64::zeros())).jacobian();
 
         approx::assert_abs_diff_eq!(
             Line::dx_proj_onto_line_at_0(&Isometry2::rot(0.2), &VecF64::<2>::new(1.0, 2.0)),

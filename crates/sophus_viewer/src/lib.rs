@@ -1,38 +1,52 @@
 #![deny(missing_docs)]
 #![allow(clippy::needless_range_loop)]
-#![no_std]
+#![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
 
-//! Simple viewer for 2D and 3D visualizations.
+#[doc = include_str!(concat!("../",  core::env!("CARGO_PKG_README")))]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
 
-/// Interactions
-pub mod interactions;
+mod interactions;
+
+pub use interactions::{
+    inplane_interaction::*,
+    orbit_interaction::*,
+    *,
+};
+
 /// The view packets.
 pub mod packets;
-/// eframea app impl
-pub mod simple_viewer;
-/// Viewer base
-pub mod viewer_base;
-/// The view struct.
+/// Views.
 pub mod views;
-
-/// eframe native options - recommended for use with the sophus
-pub fn recommened_eframe_native_options() -> eframe::NativeOptions {
-    eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([850.0, 480.0]),
-        renderer: eframe::Renderer::Wgpu,
-        multisampling: sophus_renderer::types::DOG_MULTISAMPLE_COUNT as u16,
-        ..Default::default()
-    }
-}
-
-/// prelude
+/// sophus_viewer prelude.
+///
+/// It is recommended to import this prelude when working with `sophus_viewer types:
+///
+/// ```
+/// use sophus_viewer::prelude::*;
+/// ```
+///
+/// or
+///
+/// ```ignore
+/// use sophus::prelude::*;
+/// ```
+///
+/// to import all preludes when using the `sophus` umbrella crate.
 pub mod prelude {
-    pub(crate) use alloc::boxed::Box;
-    pub(crate) use alloc::collections::btree_map::BTreeMap;
-    pub(crate) use alloc::collections::vec_deque::VecDeque;
-    pub(crate) use alloc::string::String;
-    pub(crate) use alloc::string::ToString;
-    pub(crate) use alloc::vec::Vec;
+    pub(crate) use alloc::{
+        boxed::Box,
+        collections::{
+            btree_map::BTreeMap,
+            vec_deque::VecDeque,
+        },
+        string::{
+            String,
+            ToString,
+        },
+        vec::Vec,
+    };
 
     pub use sophus_autodiff::prelude::*;
     pub use sophus_image::prelude::*;
@@ -40,4 +54,21 @@ pub mod prelude {
     pub use sophus_opt::prelude::*;
 
     extern crate alloc;
+}
+
+mod simple_viewer;
+mod viewer_base;
+
+pub use simple_viewer::*;
+pub use viewer_base::*;
+pub use views::*;
+
+/// eframe native options - recommended for use with the sophus
+pub fn recommened_eframe_native_options() -> eframe::NativeOptions {
+    eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([850.0, 480.0]),
+        renderer: eframe::Renderer::Wgpu,
+        multisampling: sophus_renderer::DOG_MULTISAMPLE_COUNT as u16,
+        ..Default::default()
+    }
 }

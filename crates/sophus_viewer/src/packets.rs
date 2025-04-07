@@ -1,21 +1,22 @@
-use crate::packets::image_view_packet::ImageViewPacket;
-use crate::packets::plot_view_packet::PlotViewPacket;
-use crate::packets::scene_view_packet::SceneViewCreation;
-use crate::packets::scene_view_packet::SceneViewPacket;
-use crate::packets::scene_view_packet::SceneViewPacketContent;
-use crate::prelude::*;
 use sophus_lie::Isometry3F64;
-use sophus_renderer::camera::RenderCamera;
-use sophus_renderer::renderables::frame::ImageFrame;
-use sophus_renderer::renderables::pixel_renderable::PixelRenderable;
-use sophus_renderer::renderables::scene_renderable::SceneRenderable;
+use sophus_renderer::{
+    camera::RenderCamera,
+    renderables::{
+        ImageFrame,
+        PixelRenderable,
+        SceneRenderable,
+    },
+};
 
-/// image packet
-pub mod image_view_packet;
-/// plot view packet
-pub mod plot_view_packet;
-/// scene packet
-pub mod scene_view_packet;
+use crate::prelude::*;
+
+mod image_view_packet;
+mod plot_view_packet;
+mod scene_view_packet;
+
+pub use image_view_packet::*;
+pub use plot_view_packet::*;
+pub use scene_view_packet::*;
 
 /// Packet of renderables
 #[derive(Clone, Debug)]

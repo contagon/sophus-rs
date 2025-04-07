@@ -1,21 +1,27 @@
 use core::borrow::Borrow;
 
-use crate::lie_group::LieGroup;
-use crate::prelude::*;
-use crate::traits::HasDisambiguate;
-use crate::traits::IsLieFactorGroupImpl;
-use crate::traits::IsLieGroupImpl;
-use crate::traits::IsRealLieFactorGroupImpl;
-use crate::traits::IsRealLieGroupImpl;
-use sophus_autodiff::manifold::IsTangent;
-use sophus_autodiff::params::IsParamsImpl;
-use sophus_autodiff::points::example_points;
+use sophus_autodiff::{
+    manifold::IsTangent,
+    params::IsParamsImpl,
+    points::example_points,
+};
+
+use crate::{
+    lie_group::LieGroup,
+    prelude::*,
+    HasDisambiguate,
+    IsLieFactorGroupImpl,
+    IsLieGroupImpl,
+    IsRealLieFactorGroupImpl,
+    IsRealLieGroupImpl,
+};
 
 extern crate alloc;
 
 /// implementation of a translation product group
 ///
-/// It is a semi-direct product of the commutative translation group (Euclidean vector space) and a factor group.
+/// It is a semi-direct product of the commutative translation group (Euclidean vector space) and a
+/// factor group.
 #[derive(Debug, Copy, Clone, Default)]
 pub struct TranslationProductGroupImpl<
     S: IsScalar<BATCH, DM, DN>,
@@ -540,7 +546,7 @@ impl<
         const BATCH: usize,
         const DM: usize,
         const DN: usize,
-        FactorImpl: crate::traits::IsLieFactorGroupImpl<S, SDOF, SPARAMS, POINT, BATCH, DM, DN>,
+        FactorImpl: crate::IsLieFactorGroupImpl<S, SDOF, SPARAMS, POINT, BATCH, DM, DN>,
     >
     IsTranslationProductGroup<
         S,
@@ -593,23 +599,16 @@ impl<
         FactorImpl,
     >;
 
-    fn from_translation_and_factor<P, F>(translation: P, factor: F) -> Self
+    fn from_translation_and_factor<F>(translation: S::Vector<POINT>, factor: F) -> Self
     where
-        P: Borrow<S::Vector<POINT>>,
         F: Borrow<LieGroup<S, SDOF, SPARAMS, POINT, POINT, BATCH, DM, DN, FactorImpl>>,
     {
-        let params = Self::Impl::params_from(translation.borrow(), factor.borrow().params());
+        let params = Self::Impl::params_from(&translation, factor.borrow().params());
         Self::from_params(params)
     }
 
-    fn set_translation<P>(&mut self, translation: P)
-    where
-        P: Borrow<<S as sophus_autodiff::prelude::IsScalar<BATCH, DM, DN>>::Vector<POINT>>,
-    {
-        self.set_params(Self::G::params_from(
-            translation.borrow(),
-            self.factor().params(),
-        ))
+    fn set_translation(&mut self, translation: S::Vector<POINT>) {
+        self.set_params(Self::G::params_from(&translation, self.factor().params()))
     }
 
     fn translation(&self) -> <S as IsScalar<BATCH, DM, DN>>::Vector<POINT> {

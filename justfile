@@ -1,6 +1,3 @@
-fmt:
-    cargo +nightly fmt
-
 clippy:
     cargo clippy
 
@@ -22,7 +19,10 @@ test:
 format:
     pre-commit run -a
     cargo +nightly fmt
+
+doc:
     cargo +nightly doc --no-deps --all-features
+    cargo +nightly test --release --doc --all-features
 
 camera_sim:
     cargo run --example camera_sim --release --features std

@@ -1,16 +1,17 @@
 use sophus_autodiff::linalg::VecF64;
 use sophus_image::ImageSize;
-use sophus_lie::Isometry3;
-use sophus_lie::Isometry3F64;
+use sophus_lie::{
+    Isometry3,
+    Isometry3F64,
+};
 
-/// Clipping planes
-pub mod clipping_planes;
-/// Camera intrinsics
-pub mod intrinsics;
-/// Camera properties
-pub mod properties;
+mod clipping_planes;
+mod intrinsics;
+mod properties;
 
-use crate::camera::properties::RenderCameraProperties;
+pub use clipping_planes::*;
+pub use intrinsics::*;
+pub use properties::*;
 
 /// Render camera configuration.
 #[derive(Clone, Debug)]

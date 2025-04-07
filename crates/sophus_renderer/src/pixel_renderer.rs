@@ -1,17 +1,24 @@
-/// Line renderer
-pub mod pixel_line;
-/// Pixel point renderer
-pub mod pixel_point;
+mod pixel_line;
+mod pixel_point;
 
-use crate::pipeline_builder::PipelineBuilder;
-use crate::pipeline_builder::PointVertex2;
-use crate::pipeline_builder::TargetTexture;
-use crate::pixel_renderer::pixel_line::PixelLineRenderer;
-use crate::pixel_renderer::pixel_point::PixelPointRenderer;
-use crate::prelude::*;
-use crate::types::SceneFocusMarker;
-use crate::uniform_buffers::VertexShaderUniformBuffers;
-use crate::RenderContext;
+pub use pixel_line::*;
+pub use pixel_point::*;
+
+use crate::{
+    pipeline_builder::{
+        PipelineBuilder,
+        PointVertex2,
+        TargetTexture,
+    },
+    pixel_renderer::{
+        pixel_line::PixelLineRenderer,
+        pixel_point::PixelPointRenderer,
+    },
+    prelude::*,
+    types::SceneFocusMarker,
+    uniform_buffers::VertexShaderUniformBuffers,
+    RenderContext,
+};
 
 /// Renderer for pixel data
 pub struct PixelRenderer {

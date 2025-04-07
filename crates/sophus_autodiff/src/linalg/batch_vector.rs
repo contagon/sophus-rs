@@ -1,13 +1,21 @@
-use crate::dual::DualBatchVector;
-use crate::linalg::BatchMatF64;
-use crate::linalg::BatchScalarF64;
-use crate::linalg::BatchVecF64;
-use crate::prelude::*;
-use core::borrow::Borrow;
-use core::simd::LaneCount;
-use core::simd::SupportedLaneCount;
+use core::{
+    borrow::Borrow,
+    simd::{
+        LaneCount,
+        SupportedLaneCount,
+    },
+};
 
 use super::batch_mask::BatchMask;
+use crate::{
+    dual::DualBatchVector,
+    linalg::{
+        BatchMatF64,
+        BatchScalarF64,
+        BatchVecF64,
+    },
+    prelude::*,
+};
 
 impl<const ROWS: usize, const BATCH: usize> IsVector<BatchScalarF64<BATCH>, ROWS, BATCH, 0, 0>
     for BatchVecF64<ROWS, BATCH>
@@ -72,8 +80,12 @@ where
         *val.borrow()
     }
 
-    fn get_elem(&self, idx: usize) -> BatchScalarF64<BATCH> {
+    fn elem(&self, idx: usize) -> BatchScalarF64<BATCH> {
         self[idx]
+    }
+
+    fn elem_mut(&mut self, idx: usize) -> &mut BatchScalarF64<BATCH> {
+        &mut self[idx]
     }
 
     fn norm(&self) -> BatchScalarF64<BATCH> {
@@ -100,14 +112,10 @@ where
         self * *v.borrow()
     }
 
-    fn set_elem(&mut self, idx: usize, v: BatchScalarF64<BATCH>) {
-        self[idx] = v;
-    }
-
     fn squared_norm(&self) -> BatchScalarF64<BATCH> {
         let mut squared_norm = <BatchScalarF64<BATCH> as IsScalar<BATCH, 0, 0>>::zeros();
         for i in 0..ROWS {
-            let val = IsVector::get_elem(self, i);
+            let val = IsVector::elem(self, i);
             squared_norm += val * val;
         }
         squared_norm

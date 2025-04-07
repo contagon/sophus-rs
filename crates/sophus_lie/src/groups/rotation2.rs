@@ -1,22 +1,47 @@
-use crate::lie_group::LieGroup;
-use crate::prelude::*;
-use crate::traits::EmptySliceError;
-use crate::traits::HasAverage;
-use crate::traits::HasDisambiguate;
-use crate::traits::IsLieFactorGroupImpl;
-use crate::traits::IsLieGroupImpl;
-use crate::traits::IsRealLieFactorGroupImpl;
-use crate::traits::IsRealLieGroupImpl;
-use core::borrow::Borrow;
-use core::marker::PhantomData;
-use sophus_autodiff::linalg::EPS_F64;
-use sophus_autodiff::manifold::IsTangent;
-use sophus_autodiff::params::HasParams;
-use sophus_autodiff::params::IsParamsImpl;
+use core::{
+    borrow::Borrow,
+    marker::PhantomData,
+};
+
+use sophus_autodiff::{
+    linalg::EPS_F64,
+    manifold::IsTangent,
+    params::{
+        HasParams,
+        IsParamsImpl,
+    },
+};
+
+use crate::{
+    lie_group::LieGroup,
+    prelude::*,
+    EmptySliceError,
+    HasAverage,
+    HasDisambiguate,
+    IsLieFactorGroupImpl,
+    IsLieGroupImpl,
+    IsRealLieFactorGroupImpl,
+    IsRealLieGroupImpl,
+};
 
 extern crate alloc;
 
-/// 2D rotation group implementation struct - SO(2)
+/// 2d rotation - element of the Special Orthogonal group SO(2)
+///
+///  * BATCH
+///     - batch dimension. If S is f64 or [sophus_autodiff::dual::DualScalar] then BATCH=1.
+///  * DM, DN
+///     - DM x DN is the static shape of the Jacobian to be computed if S == DualScalar<DM,DN>. If S
+///       == f64, then DM==0, DN==0.
+pub type Rotation2<S, const B: usize, const DM: usize, const DN: usize> =
+    LieGroup<S, 1, 2, 2, 2, B, DM, DN, Rotation2Impl<S, B, DM, DN>>;
+
+/// 2d rotation with f64 scalar type - element of the Special Orthogonal group SO(2)
+///
+/// See [Rotation2] for details.a
+pub type Rotation2F64 = Rotation2<f64, 1, 0, 0>;
+
+/// 2d rotation implementation details
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Rotation2Impl<
     S: IsScalar<BATCH, DM, DN>,
@@ -85,8 +110,7 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
 }
 
 impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: usize>
-    crate::traits::IsLieGroupImpl<S, 1, 2, 2, 2, BATCH, DM, DN>
-    for Rotation2Impl<S, BATCH, DM, DN>
+    crate::IsLieGroupImpl<S, 1, 2, 2, 2, BATCH, DM, DN> for Rotation2Impl<S, BATCH, DM, DN>
 {
     type GenG<S2: IsScalar<BATCH, DM, DN>> = Rotation2Impl<S2, BATCH, DM, DN>;
     type RealG = Rotation2Impl<S::RealScalar, BATCH, 0, 0>;
@@ -109,39 +133,39 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
 
     fn exp(omega: &S::Vector<1>) -> S::Vector<2> {
         // angle to complex number
-        let angle = omega.get_elem(0);
-        let cos = angle.clone().cos();
+        let angle = omega.elem(0);
+        let cos = angle.cos();
         let sin = angle.sin();
         S::Vector::<2>::from_array([cos, sin])
     }
 
     fn log(params: &S::Vector<2>) -> S::Vector<1> {
         // complex number to angle
-        let angle = params.get_elem(1).atan2(params.get_elem(0));
+        let angle = params.elem(1).atan2(params.elem(0));
         S::Vector::<1>::from_array([angle])
     }
 
     fn hat(omega: &S::Vector<1>) -> S::Matrix<2, 2> {
-        let angle = omega.clone().get_elem(0);
+        let angle = omega.elem(0);
         S::Matrix::<2, 2>::from_array2([[S::zeros(), -angle], [angle, S::zeros()]])
     }
 
     fn vee(hat: &S::Matrix<2, 2>) -> S::Vector<1> {
-        let angle = hat.get_elem([1, 0]);
+        let angle = hat.elem([1, 0]);
         S::Vector::<1>::from_array([angle])
     }
 
     fn group_mul(params1: &S::Vector<2>, params2: &S::Vector<2>) -> S::Vector<2> {
-        let a = params1.get_elem(0);
-        let b = params1.get_elem(1);
-        let c = params2.get_elem(0);
-        let d = params2.get_elem(1);
+        let a = params1.elem(0);
+        let b = params1.elem(1);
+        let c = params2.elem(0);
+        let d = params2.elem(1);
 
         S::Vector::<2>::from_array([a * c - d * b, a * d + b * c])
     }
 
     fn inverse(params: &S::Vector<2>) -> S::Vector<2> {
-        S::Vector::<2>::from_array([params.get_elem(0), -params.get_elem(1)])
+        S::Vector::<2>::from_array([params.elem(0), -params.elem(1)])
     }
 
     fn transform(params: &S::Vector<2>, point: &S::Vector<2>) -> S::Vector<2> {
@@ -159,8 +183,8 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
 
     fn matrix(params: &S::Vector<2>) -> S::Matrix<2, 2> {
         // rotation matrix
-        let cos = params.get_elem(0);
-        let sin = params.get_elem(1);
+        let cos = params.elem(0);
+        let sin = params.elem(1);
         S::Matrix::<2, 2>::from_array2([[cos, -sin], [sin, cos]])
     }
 
@@ -177,17 +201,17 @@ impl<S: IsRealScalar<BATCH>, const BATCH: usize> IsRealLieGroupImpl<S, 1, 2, 2, 
     }
 
     fn dx_exp_x_times_point_at_0(point: &S::Vector<2>) -> S::Matrix<2, 1> {
-        S::Matrix::from_array2([[-point.get_elem(1)], [point.get_elem(0)]])
+        S::Matrix::from_array2([[-point.elem(1)], [point.elem(0)]])
     }
 
     fn dx_exp(tangent: &S::Vector<1>) -> S::Matrix<2, 1> {
-        let theta = tangent.get_elem(0);
+        let theta = tangent.elem(0);
         S::Matrix::<2, 1>::from_array2([[-theta.sin()], [theta.cos()]])
     }
 
     fn dx_log_x(params: &S::Vector<2>) -> S::Matrix<1, 2> {
-        let x_0 = params.get_elem(0);
-        let x_1 = params.get_elem(1);
+        let x_0 = params.elem(0);
+        let x_1 = params.elem(1);
         let x_sq = x_0 * x_0 + x_1 * x_1;
         S::Matrix::from_array2([[-x_1 / x_sq, x_0 / x_sq]])
     }
@@ -201,7 +225,7 @@ impl<S: IsRealScalar<BATCH>, const BATCH: usize> IsRealLieGroupImpl<S, 1, 2, 2, 
     }
 
     fn has_shortest_path_ambiguity(params: &S::Vector<2>) -> S::Mask {
-        (Self::log(params).get_elem(0).abs() - S::from_f64(core::f64::consts::PI))
+        (Self::log(params).elem(0).abs() - S::from_f64(core::f64::consts::PI))
             .abs()
             .less_equal(&S::from_f64(EPS_F64))
     }
@@ -214,13 +238,6 @@ impl<S: IsRealScalar<BATCH>, const BATCH: usize> IsRealLieGroupImpl<S, 1, 2, 2, 
         }
     }
 }
-
-/// 2d rotation group - SO(2)
-pub type Rotation2<S, const B: usize, const DM: usize, const DN: usize> =
-    LieGroup<S, 1, 2, 2, 2, B, DM, DN, Rotation2Impl<S, B, DM, DN>>;
-
-/// 2d rotation group with f64 scalar type
-pub type Rotation2F64 = Rotation2<f64, 1, 0, 0>;
 
 impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: usize>
     Rotation2<S, BATCH, DM, DN>
@@ -245,17 +262,17 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
         Rotation2Impl<S::DualScalar<M, N>, BATCH, M, N>;
 
     fn mat_v(v: &S::Vector<1>) -> S::Matrix<2, 2> {
-        let theta = v.get_elem(0);
-        let abs_theta = theta.clone().abs();
+        let theta = v.elem(0);
+        let abs_theta = theta.abs();
 
         let near_zero = abs_theta.less_equal(&S::from_f64(EPS_F64));
 
         let theta_sq = theta * theta;
         let sin_theta_by_theta = (S::from_f64(1.0) - S::from_f64(1.0 / 6.0) * theta_sq)
-            .select(&near_zero, theta.clone().sin() / theta);
+            .select(&near_zero, theta.sin() / theta);
         let one_minus_cos_theta_by_theta: S = (S::from_f64(0.5) * theta
             - S::from_f64(1.0 / 24.0) * theta * theta_sq)
-            .select(&near_zero, (S::from_f64(1.0) - theta.clone().cos()) / theta);
+            .select(&near_zero, (S::from_f64(1.0) - theta.cos()) / theta);
 
         S::Matrix::<2, 2>::from_array2([
             [sin_theta_by_theta, -one_minus_cos_theta_by_theta],
@@ -264,16 +281,16 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
     }
 
     fn mat_v_inverse(tangent: &S::Vector<1>) -> S::Matrix<2, 2> {
-        let theta = tangent.get_elem(0);
+        let theta = tangent.elem(0);
         let halftheta = S::from_f64(0.5) * theta;
 
-        let real_minus_one = theta.clone().cos() - S::from_f64(1.0);
-        let abs_real_minus_one = real_minus_one.clone().abs();
+        let real_minus_one = theta.cos() - S::from_f64(1.0);
+        let abs_real_minus_one = real_minus_one.abs();
 
         let near_zero = abs_real_minus_one.less_equal(&S::from_f64(EPS_F64));
 
         let halftheta_by_tan_of_halftheta = (S::from_f64(1.0)
-            - S::from_f64(1.0 / 12.0) * tangent.get_elem(0) * tangent.get_elem(0))
+            - S::from_f64(1.0 / 12.0) * tangent.elem(0) * tangent.elem(0))
         .select(&near_zero, -(halftheta * theta.sin()) / real_minus_one);
 
         S::Matrix::<2, 2>::from_array2([
@@ -283,11 +300,11 @@ impl<S: IsScalar<BATCH, DM, DN>, const BATCH: usize, const DM: usize, const DN: 
     }
 
     fn adj_of_translation(_params: &S::Vector<2>, point: &S::Vector<2>) -> S::Matrix<2, 1> {
-        S::Matrix::<2, 1>::from_array2([[point.get_elem(1)], [-point.get_elem(0)]])
+        S::Matrix::<2, 1>::from_array2([[point.elem(1)], [-point.elem(0)]])
     }
 
     fn ad_of_translation(point: &S::Vector<2>) -> S::Matrix<2, 1> {
-        S::Matrix::<2, 1>::from_array2([[point.get_elem(1)], [-point.get_elem(0)]])
+        S::Matrix::<2, 1>::from_array2([[point.elem(1)], [-point.elem(0)]])
     }
 }
 
@@ -295,7 +312,7 @@ impl<S: IsRealScalar<BATCH>, const BATCH: usize> IsRealLieFactorGroupImpl<S, 1, 
     for Rotation2Impl<S, BATCH, 0, 0>
 {
     fn dx_mat_v(tangent: &S::Vector<1>) -> [S::Matrix<2, 2>; 1] {
-        let theta = tangent.get_elem(0);
+        let theta = tangent.elem(0);
         let theta_sq = theta * theta;
         let sin_theta = theta.sin();
         let cos_theta = theta.cos();
@@ -313,13 +330,13 @@ impl<S: IsRealScalar<BATCH>, const BATCH: usize> IsRealLieFactorGroupImpl<S, 1, 
     }
 
     fn dparams_matrix_times_point(_params: &S::Vector<2>, point: &S::Vector<2>) -> S::Matrix<2, 2> {
-        let px = point.get_elem(0);
-        let py = point.get_elem(1);
+        let px = point.elem(0);
+        let py = point.elem(1);
         S::Matrix::from_array2([[px, -py], [py, px]])
     }
 
     fn dx_mat_v_inverse(tangent: &S::Vector<1>) -> [S::Matrix<2, 2>; 1] {
-        let theta = tangent.get_elem(0);
+        let theta = tangent.elem(0);
         let sin_theta = theta.sin();
         let cos_theta = theta.cos();
 
@@ -365,13 +382,16 @@ impl<S: IsSingleScalar<DM, DN> + PartialOrd, const DM: usize, const DN: usize>
 
 #[test]
 fn rotation2_prop_tests() {
-    use crate::factor_lie_group::RealFactorLieGroupTest;
-    use crate::lie_group::real_lie_group::RealLieGroupTest;
-    use sophus_autodiff::dual::dual_scalar::DualScalar;
     #[cfg(feature = "simd")]
     use sophus_autodiff::dual::DualBatchScalar;
+    use sophus_autodiff::dual::DualScalar;
     #[cfg(feature = "simd")]
     use sophus_autodiff::linalg::BatchScalarF64;
+
+    use crate::lie_group::{
+        factor_lie_group::RealFactorLieGroupTest,
+        real_lie_group::RealLieGroupTest,
+    };
 
     Rotation2F64::test_suite();
     #[cfg(feature = "simd")]

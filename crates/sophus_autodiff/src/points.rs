@@ -1,28 +1,47 @@
-use crate::prelude::*;
+use core::f64;
+
 use nalgebra::SVector;
 use num_traits::Bounded;
+
+use crate::{
+    linalg::VecF64,
+    prelude::*,
+};
 extern crate alloc;
 
-/// Traits for points
+/// Trait for a point.
+///
+/// In particular, this is implemented for [nalgebra::SVector] and [core::f64].
 pub trait IsPoint<const D: usize>: Copy + Bounded {
-    /// Point type
+    /// The point type.
     type Point: Bounded;
 
-    /// smallest point
+    /// Each component contains the smallest finite value, e.g. [core::f64::MIN].
     fn smallest() -> Self::Point {
         Bounded::min_value()
     }
 
-    /// largest point
+    /// Each component contains the smallest finite value, e.g. [core::f64::MAX].
     fn largest() -> Self::Point {
         Bounded::max_value()
     }
 
-    /// clamp point
+    /// Clamp point to min and max.
     fn clamp(&self, min: Self, max: Self) -> Self::Point;
 
-    /// check if point is less or equal to another point
+    /// Check if point is less or equal to another point.
     fn is_less_equal(&self, rhs: Self) -> bool;
+}
+
+/// Trait for floating point - with +infinity / -infinity.
+///
+/// In particular, this is implemented for [crate::linalg::VecF64] and [core::f64].
+pub trait IsUnboundedPoint<const D: usize>: IsPoint<D> {
+    /// Each component contains the +infinity value, e.g. [core::f64::INFINITY].
+    fn infinity() -> Self::Point;
+
+    /// Each component contains the -infinity value, e.g. [core::f64::NEG_INFINITY].
+    fn neg_infinity() -> Self::Point;
 }
 
 impl IsPoint<1> for f64 {
@@ -34,6 +53,16 @@ impl IsPoint<1> for f64 {
 
     fn is_less_equal(&self, rhs: f64) -> bool {
         self <= &rhs
+    }
+}
+
+impl IsUnboundedPoint<1> for f64 {
+    fn infinity() -> Self::Point {
+        f64::INFINITY
+    }
+
+    fn neg_infinity() -> Self::Point {
+        f64::NEG_INFINITY
     }
 }
 
@@ -64,6 +93,16 @@ impl<const D: usize> IsPoint<D> for SVector<f64, D> {
         self.iter()
             .zip(rhs.iter())
             .all(|(a, b)| a.is_less_equal(*b))
+    }
+}
+
+impl<const D: usize> IsUnboundedPoint<D> for VecF64<D> {
+    fn infinity() -> Self::Point {
+        VecF64::<D>::repeat(f64::INFINITY)
+    }
+
+    fn neg_infinity() -> Self::Point {
+        VecF64::<D>::repeat(f64::NEG_INFINITY)
     }
 }
 
@@ -108,8 +147,8 @@ pub fn example_points<
     for p4 in points4 {
         let mut v = S::Vector::<POINT>::zeros();
         for i in 0..POINT.min(4) {
-            let val = p4.get_elem(i);
-            v.set_elem(i, val);
+            let val = p4.elem(i);
+            *v.elem_mut(i) = val;
         }
         out.push(v)
     }

@@ -1,13 +1,21 @@
-use crate::dual::DualBatchMatrix;
-use crate::linalg::BatchMatF64;
-use crate::linalg::BatchScalarF64;
-use crate::linalg::BatchVecF64;
-use crate::prelude::*;
-use core::borrow::Borrow;
-use core::simd::LaneCount;
-use core::simd::SupportedLaneCount;
+use core::{
+    borrow::Borrow,
+    simd::{
+        LaneCount,
+        SupportedLaneCount,
+    },
+};
 
 use super::batch_mask::BatchMask;
+use crate::{
+    dual::DualBatchMatrix,
+    linalg::{
+        BatchMatF64,
+        BatchScalarF64,
+        BatchVecF64,
+    },
+    prelude::*,
+};
 
 impl<const ROWS: usize, const COLS: usize, const BATCH: usize>
     IsMatrix<BatchScalarF64<BATCH>, ROWS, COLS, BATCH, 0, 0> for BatchMatF64<ROWS, COLS, BATCH>
@@ -68,8 +76,12 @@ where
         Self::from_fn(|r, c| BatchScalarF64::<BATCH>::from_f64(vals[r][c]))
     }
 
-    fn get_elem(&self, idx: [usize; 2]) -> BatchScalarF64<BATCH> {
+    fn elem(&self, idx: [usize; 2]) -> BatchScalarF64<BATCH> {
         self[(idx[0], idx[1])]
+    }
+
+    fn elem_mut(&mut self, idx: [usize; 2]) -> &mut BatchScalarF64<BATCH> {
+        &mut self[(idx[0], idx[1])]
     }
 
     fn block_mat2x1<const R0: usize, const R1: usize>(
@@ -159,10 +171,6 @@ where
         Q: Borrow<Self>,
     {
         self.zip_map(other.borrow(), |a, b| a.select(mask, b))
-    }
-
-    fn set_elem(&mut self, idx: [usize; 2], val: BatchScalarF64<BATCH>) {
-        self[(idx[0], idx[1])] = val;
     }
 
     fn transposed(&self) -> BatchMatF64<COLS, ROWS, BATCH> {

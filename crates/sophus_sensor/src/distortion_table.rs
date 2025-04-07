@@ -1,13 +1,16 @@
-use crate::dyn_camera::DynCameraF64;
-use crate::prelude::*;
 use nalgebra::SVector;
 use sophus_autodiff::linalg::VecF64;
-use sophus_geo::region::Region;
-use sophus_image::arc_image::ArcImage2F32;
-use sophus_image::image_view::IsImageView;
-use sophus_image::interpolation::interpolate;
-use sophus_image::mut_image::MutImage2F32;
-use sophus_image::mut_image_view::IsMutImageView;
+use sophus_geo::region::BoxRegion;
+use sophus_image::{
+    interpolate_xf32,
+    ArcImage2F32,
+    MutImage2F32,
+};
+
+use crate::{
+    dyn_camera::DynCameraF64,
+    prelude::*,
+};
 
 extern crate alloc;
 
@@ -17,7 +20,7 @@ pub struct DistortTable {
     /// The table of distortion values.
     pub table: ArcImage2F32,
     /// The x and y region of the values the table represents.
-    pub region: Region<2>,
+    pub region: BoxRegion<2>,
 }
 
 impl DistortTable {
@@ -31,7 +34,7 @@ impl DistortTable {
 
     /// Returns the offset of the table.
     pub fn offset(&self) -> VecF64<2> {
-        self.region.min()
+        self.region.try_lower().unwrap()
     }
 
     /// Looks up the distortion value for a given point - using bilinear interpolation.
@@ -40,7 +43,7 @@ impl DistortTable {
         norm_point.x /= self.incr().x;
         norm_point.y /= self.incr().y;
 
-        let p2 = interpolate(&self.table, norm_point.cast());
+        let p2 = interpolate_xf32(&self.table, norm_point.cast());
         VecF64::<2>::new(p2[0] as f64, p2[1] as f64)
     }
 }
@@ -50,7 +53,7 @@ pub fn distort_table(cam: &DynCameraF64) -> DistortTable {
     // First we find min and max values in the proj plane.
     // Just test the 4 corners might not be enough, so we will test the image boundary.
 
-    let mut region = Region::<2>::empty();
+    let mut region = BoxRegion::<2>::empty();
 
     let v_top = -0.5;
     let v_bottom = cam.image_size().height as f64 - 0.5;
@@ -61,22 +64,22 @@ pub fn distort_table(cam: &DynCameraF64) -> DistortTable {
     for i in 0..=cam.image_size().width {
         let u = i as f64 - 0.5;
         // top border
-        region.extend(&cam.undistort(VecF64::<2>::new(u, v_top)));
+        region.extend(cam.undistort(VecF64::<2>::new(u, v_top)));
         // bottom border
-        region.extend(&cam.undistort(VecF64::<2>::new(u, v_bottom)));
+        region.extend(cam.undistort(VecF64::<2>::new(u, v_bottom)));
     }
     for i in 0..=cam.image_size().height {
         let v = i as f64 - 0.5;
         // left border
-        region.extend(&cam.undistort(VecF64::<2>::new(u_left, v)));
+        region.extend(cam.undistort(VecF64::<2>::new(u_left, v)));
         // right border
-        region.extend(&cam.undistort(VecF64::<2>::new(u_right, v)));
+        region.extend(cam.undistort(VecF64::<2>::new(u_right, v)));
     }
 
-    let mid = region.mid();
+    let mid = region.try_center().unwrap();
     let range = region.range();
 
-    let larger_region = Region::<2>::from_min_max(mid - range, mid + range);
+    let larger_region = BoxRegion::<2>::from_bounds(mid - range, mid + range);
 
     let mut distort_table = DistortTable {
         table: ArcImage2F32::from_image_size_and_val(cam.image_size(), SVector::<f32, 2>::zeros()),
@@ -101,14 +104,23 @@ pub fn distort_table(cam: &DynCameraF64) -> DistortTable {
 
 #[test]
 fn camera_distortion_table_tests() {
-    use crate::distortion_table::distort_table;
-    use crate::distortion_table::DistortTable;
-    use approx::assert_abs_diff_eq;
-    use approx::assert_relative_eq;
-    use sophus_autodiff::linalg::VecF64;
-    use sophus_autodiff::linalg::EPS_F64;
-    use sophus_autodiff::maps::vector_valued_maps::VectorValuedVectorMap;
+    use approx::{
+        assert_abs_diff_eq,
+        assert_relative_eq,
+    };
+    use sophus_autodiff::{
+        linalg::{
+            VecF64,
+            EPS_F64,
+        },
+        maps::VectorValuedVectorMap,
+    };
     use sophus_image::ImageSize;
+
+    use crate::distortion_table::{
+        distort_table,
+        DistortTable,
+    };
 
     {
         let mut cameras: alloc::vec::Vec<DynCameraF64> = alloc::vec![];

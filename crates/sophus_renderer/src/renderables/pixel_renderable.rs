@@ -1,8 +1,11 @@
-use crate::prelude::*;
-use crate::renderables::color::Color;
 use sophus_autodiff::linalg::SVec;
 
-/// Pixel renderable
+use crate::{
+    prelude::*,
+    renderables::color::Color,
+};
+
+/// pixel renderable
 #[derive(Clone, Debug)]
 pub enum PixelRenderable {
     /// 2D line segments

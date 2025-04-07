@@ -1,17 +1,53 @@
-/// hyper-plane: line in 2d, plane in 3d, ...
-pub mod hyperplane;
-/// n-Sphere: circle, sphere, ...
-pub mod hypersphere;
-/// ray
-pub mod ray;
-/// region
-pub mod region;
-/// unit vector
-pub mod unit_vector;
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![deny(missing_docs)]
+#![no_std]
+#![allow(clippy::needless_range_loop)]
+#![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
 
-/// sophus_geo prelude
+#[cfg(feature = "std")]
+extern crate std;
+
+#[doc = include_str!(concat!("../",  core::env!("CARGO_PKG_README")))]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
+mod hyperplane;
+mod hypersphere;
+mod ray;
+/// Intervals and box regions.
+pub mod region;
+mod unit_vector;
+
+pub use crate::{
+    hyperplane::*,
+    hypersphere::*,
+    ray::*,
+    unit_vector::*,
+};
+
+/// sophus_geo prelude.
+///
+/// It is recommended to import this prelude when working with `sophus_geo types:
+///
+/// ```
+/// use sophus_geo::prelude::*;
+/// ```
+///
+/// or
+///
+/// ```ignore
+/// use sophus::prelude::*;
+/// ```
+///
+/// to import all preludes when using the `sophus` umbrella crate.
 pub mod prelude {
-    pub use crate::region::IsRegion;
     pub use sophus_autodiff::prelude::*;
     pub use sophus_lie::prelude::*;
+
+    pub use crate::region::{
+        IsNonEmptyRegion,
+        IsRegion,
+        IsRegionBase,
+    };
 }

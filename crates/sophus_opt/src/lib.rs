@@ -1,29 +1,56 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![deny(missing_docs)]
 #![allow(clippy::needless_range_loop)]
+#![doc = include_str!(concat!("../", std::env!("CARGO_PKG_README")))]
+#![cfg_attr(nightly, feature(doc_auto_cfg))]
 
-//! # Non-linear least squares optimization crate - part of the sophus-rs project
+#[doc = include_str!(concat!("../",  core::env!("CARGO_PKG_README")))]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
 
-/// Block vector and matrix operations
+mod asserts;
+
+/// Block vectors, block matrices and utilities
 pub mod block;
 /// Example problems
 pub mod example_problems;
-/// Entry point for the non-linear least squares optimization
+/// Non-linear least squares optimization
 pub mod nlls;
-/// Cost functions, terms, residuals etc.
-pub mod quadratic_cost;
 /// Robust kernel functions
 pub mod robust_kernel;
-/// Linear solvers
-pub mod solvers;
 /// Decision variables
 pub mod variables;
-
-/// Sophus optimization prelude
+/// sophus_opt prelude.
+///
+/// It is recommended to import this prelude when working with `sophus_opt types:
+///
+/// ```
+/// use sophus_opt::prelude::*;
+/// ```
+///
+/// or
+///
+/// ```ignore
+/// use sophus::prelude::*;
+/// ```
+///
+/// to import all preludes when using the `sophus` umbrella crate.
 pub mod prelude {
-    pub use crate::robust_kernel::IsRobustKernel;
     pub use sophus_autodiff::prelude::*;
     pub use sophus_image::prelude::*;
     pub use sophus_lie::prelude::*;
     pub use sophus_sensor::prelude::*;
+
+    pub use crate::{
+        nlls::{
+            HasEqConstraintResidualFn,
+            HasResidualFn,
+            IsCostFn,
+            IsEqConstraintsFn,
+            IsEvaluatedCost,
+            MakeEvaluatedCostTerm,
+            MakeEvaluatedEqConstraint,
+        },
+        robust_kernel::IsRobustKernel,
+    };
 }

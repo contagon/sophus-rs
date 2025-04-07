@@ -1,23 +1,35 @@
-use super::cost_fn::reprojection::ReprojTerm;
-use crate::example_problems::cost_fn::isometry3_prior::Isometry3PriorCostFn;
-use crate::example_problems::cost_fn::isometry3_prior::Isometry3PriorTerm;
-use crate::example_problems::cost_fn::reprojection::ReprojectionCostFn;
-use crate::nlls::optimize;
-use crate::nlls::OptParams;
-use crate::prelude::*;
-use crate::quadratic_cost::cost_fn::CostFn;
-use crate::quadratic_cost::term::Terms;
-use crate::robust_kernel::HuberKernel;
-use crate::variables::VarFamily;
-use crate::variables::VarKind;
-use crate::variables::VarPoolBuilder;
-use sophus_autodiff::linalg::MatF64;
-use sophus_autodiff::linalg::VecF64;
+use sophus_autodiff::linalg::{
+    MatF64,
+    VecF64,
+};
 use sophus_image::ImageSize;
-use sophus_lie::Isometry3;
-use sophus_lie::Isometry3F64;
-use sophus_lie::Rotation3;
-use sophus_sensor::camera_enum::perspective_camera::PinholeCameraF64;
+use sophus_lie::{
+    Isometry3,
+    Isometry3F64,
+    Rotation3,
+};
+use sophus_sensor::PinholeCameraF64;
+
+use crate::{
+    nlls::{
+        costs::{
+            Isometry3PriorCostTerm,
+            PinholeCameraReprojectionCostTerm,
+        },
+        optimize_nlls,
+        CostFn,
+        CostTerms,
+        LinearSolverType,
+        OptParams,
+    },
+    prelude::*,
+    robust_kernel::HuberKernel,
+    variables::{
+        VarBuilder,
+        VarFamily,
+        VarKind,
+    },
+};
 
 extern crate alloc;
 
@@ -31,7 +43,7 @@ pub struct CamCalibProblem {
     /// points in world
     pub points_in_world: alloc::vec::Vec<VecF64<3>>,
     /// observations
-    pub observations: alloc::vec::Vec<ReprojTerm>,
+    pub observations: alloc::vec::Vec<PinholeCameraReprojectionCostTerm>,
 
     /// true intrinsics
     pub true_intrinsics: PinholeCameraF64,
@@ -42,6 +54,10 @@ pub struct CamCalibProblem {
 }
 
 impl CamCalibProblem {
+    const CAMS: &str = "cams";
+    const POSES: &str = "poses";
+    const POINTS: &str = "points";
+
     /// create new camera calibration problem
     pub fn new(spurious_matches: bool) -> Self {
         let true_world_from_cameras = alloc::vec![
@@ -76,7 +92,7 @@ impl CamCalibProblem {
             let v = rng.gen::<f64>() * (image_size.height as f64 - 1.0);
             let true_uv_in_img0 = VecF64::<2>::new(u, v);
             let img_noise = VecF64::<2>::new(rng.gen::<f64>() - 0.5, rng.gen::<f64>() - 0.5);
-            observations.push(ReprojTerm {
+            observations.push(PinholeCameraReprojectionCostTerm {
                 uv_in_image: true_uv_in_img0 + img_noise,
                 entity_indices: [0, 0, i],
             });
@@ -95,12 +111,12 @@ impl CamCalibProblem {
             if spurious_matches && i == 0 {
                 let u = rng.gen::<f64>() * (image_size.width as f64 - 1.0);
                 let v = rng.gen::<f64>() * (image_size.height as f64 - 1.0);
-                observations.push(ReprojTerm {
+                observations.push(PinholeCameraReprojectionCostTerm {
                     uv_in_image: VecF64::<2>::new(u, v),
                     entity_indices: [0, 1, i],
                 });
             } else {
-                observations.push(ReprojTerm {
+                observations.push(PinholeCameraReprojectionCostTerm {
                     uv_in_image: true_uv_in_img1 + img_noise,
                     entity_indices: [0, 1, i],
                 });
@@ -111,7 +127,7 @@ impl CamCalibProblem {
             let true_point_in_cam2 = true_cam2_from_cam0.transform(true_point_in_cam0);
             let true_uv_in_img2 = true_intrinsics.cam_proj(true_point_in_cam2);
             let img_noise = VecF64::<2>::new(rng.gen::<f64>() - 0.5, rng.gen::<f64>() - 0.5);
-            observations.push(ReprojTerm {
+            observations.push(PinholeCameraReprojectionCostTerm {
                 uv_in_image: true_uv_in_img2 + img_noise,
                 entity_indices: [0, 2, i],
             });
@@ -134,58 +150,62 @@ impl CamCalibProblem {
     }
 
     /// optimize with two poses fixed
-    pub fn optimize_with_two_poses_fixed(&self, intrinsics_var_kind: VarKind) {
-        let reproj_obs = Terms::<3, VecF64<2>, ReprojTerm>::new(
-            ["cams".into(), "poses".into(), "points".into()],
+    pub fn optimize_with_two_poses_fixed(
+        &self,
+        intrinsics_var_kind: VarKind,
+        solver: LinearSolverType,
+    ) {
+        let reproj_obs = CostTerms::new(
+            [Self::CAMS, Self::POSES, Self::POINTS],
             self.observations.clone(),
         );
-
-        let cam_family: VarFamily<PinholeCameraF64> =
-            VarFamily::new(intrinsics_var_kind, alloc::vec![self.intrinsics]);
 
         let mut id = alloc::collections::BTreeMap::new();
         id.insert(0, ());
         id.insert(1, ());
 
-        let pose_family: VarFamily<Isometry3F64> = VarFamily::new_with_const_ids(
-            VarKind::Free,
-            self.world_from_cameras.clone(),
-            id.clone(),
-        );
-
-        let point_family: VarFamily<VecF64<3>> =
-            VarFamily::new(VarKind::Free, self.points_in_world.clone());
-
-        let var_pool = VarPoolBuilder::new()
-            .add_family("cams", cam_family)
-            .add_family("poses", pose_family)
-            .add_family("points", point_family)
+        let variables = VarBuilder::new()
+            .add_family(
+                Self::CAMS,
+                VarFamily::new(intrinsics_var_kind, alloc::vec![self.intrinsics]),
+            )
+            .add_family(
+                Self::POSES,
+                VarFamily::new_with_const_ids(
+                    VarKind::Free,
+                    self.world_from_cameras.clone(),
+                    id.clone(),
+                ),
+            )
+            .add_family(
+                Self::POINTS,
+                VarFamily::new(VarKind::Free, self.points_in_world.clone()),
+            )
             .build();
 
-        let up_var_pool = optimize(
-            var_pool,
+        let solution = optimize_nlls(
+            variables,
             alloc::vec![
                 // robust kernel to deal with outliers
-                CostFn::new_robust(
+                CostFn::new_boxed_robust(
                     (),
                     reproj_obs.clone(),
-                    ReprojectionCostFn {},
                     crate::robust_kernel::RobustKernel::Huber(HuberKernel::new(1.0)),
                 ),
             ],
             OptParams {
-                num_iter: 25,       // should converge in single iteration
-                initial_lm_nu: 1.0, // if lm prior param is tiny
+                num_iterations: 25, // should converge in single iteration
+                initial_lm_damping: 1.0,
                 parallelize: true,
-                linear_solver: crate::nlls::LinearSolverType::NalgebraDenseFullPiVLu,
                 error_tol_relative: 1e-6,
                 error_tol_absolute: 1e-6,
                 error_tol: 0.0,
+                solver,
             },
         )
         .unwrap();
-
-        let refined_world_from_robot = up_var_pool.get_members::<Isometry3F64>("poses".into());
+        let refined_variables = solution.variables;
+        let refined_world_from_robot = refined_variables.get_members::<Isometry3F64>(Self::POSES);
 
         approx::assert_abs_diff_eq!(
             refined_world_from_robot[2].translation(),
@@ -195,66 +215,62 @@ impl CamCalibProblem {
     }
 
     /// optimize with priors
-    pub fn optimize_with_priors(&self) {
-        let priors = Terms::<1, (Isometry3F64, MatF64<6, 6>), Isometry3PriorTerm>::new(
-            ["poses".into()],
+    pub fn optimize_with_priors(&self, solver: LinearSolverType) {
+        let priors = CostTerms::new(
+            [Self::POSES],
             alloc::vec![
-                Isometry3PriorTerm {
+                Isometry3PriorCostTerm {
                     entity_indices: [0],
-                    isometry_prior: (
-                        self.true_world_from_cameras[0],
-                        MatF64::<6, 6>::new_scaling(10000.0),
-                    ),
+                    isometry_prior_mean: self.true_world_from_cameras[0],
+                    isometry_prior_precision: MatF64::<6, 6>::new_scaling(10000.0),
                 },
-                Isometry3PriorTerm {
+                Isometry3PriorCostTerm {
                     entity_indices: [1],
-                    isometry_prior: (
-                        self.true_world_from_cameras[1],
-                        MatF64::<6, 6>::new_scaling(10000.0),
-                    ),
+                    isometry_prior_mean: self.true_world_from_cameras[1],
+                    isometry_prior_precision: MatF64::<6, 6>::new_scaling(10000.0),
                 },
             ],
         );
 
-        let reproj_obs = Terms::<3, VecF64<2>, ReprojTerm>::new(
-            ["cams".into(), "poses".into(), "points".into()],
+        let reproj_obs = CostTerms::new(
+            [Self::CAMS, Self::POSES, Self::POINTS],
             self.observations.clone(),
         );
 
-        let cam_family: VarFamily<PinholeCameraF64> =
-            VarFamily::new(VarKind::Conditioned, alloc::vec![self.intrinsics]);
-
-        let pose_family: VarFamily<Isometry3F64> =
-            VarFamily::new(VarKind::Free, self.world_from_cameras.clone());
-
-        let point_family: VarFamily<VecF64<3>> =
-            VarFamily::new(VarKind::Free, self.points_in_world.clone());
-
-        let var_pool = VarPoolBuilder::new()
-            .add_family("cams", cam_family)
-            .add_family("poses", pose_family)
-            .add_family("points", point_family)
+        let var_pool = VarBuilder::new()
+            .add_family(
+                Self::CAMS,
+                VarFamily::new(VarKind::Conditioned, alloc::vec![self.intrinsics]),
+            )
+            .add_family(
+                Self::POSES,
+                VarFamily::new(VarKind::Free, self.world_from_cameras.clone()),
+            )
+            .add_family(
+                Self::POINTS,
+                VarFamily::new(VarKind::Free, self.points_in_world.clone()),
+            )
             .build();
 
-        let up_var_pool = optimize(
+        let solution = optimize_nlls(
             var_pool,
             alloc::vec![
-                CostFn::new_box((), priors.clone(), Isometry3PriorCostFn {}),
-                CostFn::new_box((), reproj_obs.clone(), ReprojectionCostFn {}),
+                CostFn::new_boxed((), priors.clone()),
+                CostFn::new_boxed((), reproj_obs.clone()),
             ],
             OptParams {
-                num_iter: 5,
-                initial_lm_nu: 1.0,
+                num_iterations: 10,
+                initial_lm_damping: 1.0,
                 parallelize: true,
-                linear_solver: crate::nlls::LinearSolverType::NalgebraDenseFullPiVLu,
                 error_tol_relative: 1e-6,
                 error_tol_absolute: 1e-6,
                 error_tol: 0.0,
+                solver,
             },
         )
         .unwrap();
-
-        let refined_world_from_robot = up_var_pool.get_members::<Isometry3F64>("poses".into());
+        let refined_variables = solution.variables;
+        let refined_world_from_robot = refined_variables.get_members::<Isometry3F64>(Self::POSES);
 
         approx::assert_abs_diff_eq!(
             refined_world_from_robot[2].translation(),
@@ -268,11 +284,16 @@ mod tests {
 
     #[test]
     fn simple_cam_tests() {
-        use crate::example_problems::cam_calib::CamCalibProblem;
-        use crate::variables::VarKind;
+        use crate::{
+            example_problems::cam_calib::CamCalibProblem,
+            nlls::LinearSolverType,
+            variables::VarKind,
+        };
 
-        CamCalibProblem::new(true).optimize_with_two_poses_fixed(VarKind::Free);
-        CamCalibProblem::new(false).optimize_with_two_poses_fixed(VarKind::Conditioned);
-        CamCalibProblem::new(false).optimize_with_priors();
+        for solver in LinearSolverType::sparse_solvers() {
+            CamCalibProblem::new(true).optimize_with_two_poses_fixed(VarKind::Free, solver);
+            CamCalibProblem::new(false).optimize_with_two_poses_fixed(VarKind::Conditioned, solver);
+            CamCalibProblem::new(false).optimize_with_priors(solver);
+        }
     }
 }

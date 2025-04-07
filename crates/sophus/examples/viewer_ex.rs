@@ -1,38 +1,51 @@
 #![cfg(feature = "std")]
 
 use core::f64::consts::TAU;
-use sophus::autodiff::linalg::VecF64;
-use sophus::examples::viewer_example::make_distorted_frame;
-use sophus::lie::Isometry3;
-use sophus::prelude::*;
-use sophus::sensor::dyn_camera::DynCameraF64;
-use sophus_image::intensity_image::intensity_arc_image::IsIntensityArcImage;
-use sophus_image::mut_image::MutImageF32;
-use sophus_image::mut_image_view::IsMutImageView;
-use sophus_image::ImageSize;
-use sophus_renderer::camera::clipping_planes::ClippingPlanes;
-use sophus_renderer::camera::properties::RenderCameraProperties;
-use sophus_renderer::camera::RenderCamera;
-use sophus_renderer::renderables::color::Color;
-use sophus_renderer::renderables::frame::ImageFrame;
-use sophus_renderer::renderables::pixel_renderable::make_line2;
-use sophus_renderer::renderables::pixel_renderable::make_point2;
-use sophus_renderer::renderables::scene_renderable::make_line3;
-use sophus_renderer::renderables::scene_renderable::make_mesh3_at;
-use sophus_renderer::renderables::scene_renderable::make_point3;
-use sophus_renderer::RenderContext;
-use sophus_viewer::packets::append_to_scene_packet;
-use sophus_viewer::packets::create_scene_packet;
-use sophus_viewer::packets::image_view_packet::ImageViewPacket;
-use sophus_viewer::packets::plot_view_packet::curve_vec_with_conf::CurveVecWithConfStyle;
-use sophus_viewer::packets::plot_view_packet::scalar_curve::ScalarCurveStyle;
-use sophus_viewer::packets::plot_view_packet::vec_curve::CurveVecStyle;
-use sophus_viewer::packets::plot_view_packet::ClearCondition;
-use sophus_viewer::packets::plot_view_packet::LineType;
-use sophus_viewer::packets::plot_view_packet::PlotViewPacket;
-use sophus_viewer::packets::Packet;
-use sophus_viewer::simple_viewer::SimpleViewer;
 use std::thread::spawn;
+
+use sophus::{
+    autodiff::linalg::VecF64,
+    examples::viewer_example::make_distorted_frame,
+    lie::Isometry3,
+    prelude::*,
+    sensor::DynCameraF64,
+};
+use sophus_image::{
+    ImageSize,
+    MutImageF32,
+};
+use sophus_renderer::{
+    camera::{
+        ClippingPlanes,
+        RenderCamera,
+        RenderCameraProperties,
+    },
+    renderables::{
+        make_line2,
+        make_line3,
+        make_mesh3_at,
+        make_point2,
+        make_point3,
+        Color,
+        ImageFrame,
+    },
+    RenderContext,
+};
+use sophus_viewer::{
+    packets::{
+        append_to_scene_packet,
+        create_scene_packet,
+        ClearCondition,
+        CurveVecStyle,
+        CurveVecWithConfStyle,
+        ImageViewPacket,
+        LineType,
+        Packet,
+        PlotViewPacket,
+        ScalarCurveStyle,
+    },
+    SimpleViewer,
+};
 use thingbuf::mpsc::blocking::channel;
 
 fn create_distorted_image_packet() -> Packet {
@@ -100,7 +113,7 @@ fn create_tiny_image_view_packet() -> Packet {
 }
 
 fn create_scene(pinhole: bool) -> Vec<Packet> {
-    let unified_cam = DynCameraF64::new_unified(
+    let unified_cam = DynCameraF64::new_enhanced_unified(
         VecF64::from_array([500.0, 500.0, 320.0, 240.0, 0.629, 1.02]),
         ImageSize::new(639, 479),
     );

@@ -1,25 +1,34 @@
-/// distortion renderer
-pub mod distortion;
-/// line renderer
-pub mod line;
-/// mesh renderer
-pub mod mesh;
-/// point renderer
-pub mod point;
-/// textured mesh renderer
-pub mod textured_mesh;
+mod distortion;
+mod line;
+mod mesh;
+mod point;
+mod textured_mesh;
 
-use crate::pipeline_builder::PipelineBuilder;
-use crate::pipeline_builder::TargetTexture;
-use crate::prelude::*;
-use crate::scene_renderer::mesh::MeshRenderer;
-use crate::scene_renderer::point::ScenePointRenderer;
-use crate::textures::depth::DepthTextures;
-use crate::textures::rgba::RgbdTexture;
-use crate::uniform_buffers::VertexShaderUniformBuffers;
-use crate::RenderContext;
+pub use distortion::*;
+pub use line::*;
+pub use mesh::*;
+pub use point::*;
 use sophus_lie::Isometry3F64;
+pub use textured_mesh::*;
 use wgpu::DepthStencilState;
+
+use crate::{
+    pipeline_builder::{
+        PipelineBuilder,
+        TargetTexture,
+    },
+    prelude::*,
+    scene_renderer::{
+        mesh::MeshRenderer,
+        point::ScenePointRenderer,
+    },
+    textures::{
+        DepthTextures,
+        RgbdTexture,
+    },
+    uniform_buffers::VertexShaderUniformBuffers,
+    RenderContext,
+};
 
 /// Scene renderer
 pub struct SceneRenderer {

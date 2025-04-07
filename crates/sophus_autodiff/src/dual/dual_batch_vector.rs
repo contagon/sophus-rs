@@ -1,26 +1,61 @@
-use super::vector::HasJacobian;
-use super::vector::VectorValuedDerivative;
-use crate::dual::dual_batch_scalar::DualBatchScalar;
-use crate::dual::DualBatchMatrix;
-use crate::linalg::batch_mask::BatchMask;
-use crate::linalg::BatchMatF64;
-use crate::linalg::BatchScalarF64;
-use crate::linalg::BatchVecF64;
-use crate::linalg::SMat;
-use crate::linalg::SVec;
-use crate::prelude::*;
-use approx::AbsDiffEq;
-use approx::RelativeEq;
-use core::borrow::Borrow;
-use core::fmt::Debug;
-use core::ops::Add;
-use core::ops::Neg;
-use core::ops::Sub;
-use core::simd::LaneCount;
-use core::simd::SupportedLaneCount;
+use core::{
+    borrow::Borrow,
+    fmt::Debug,
+    ops::{
+        Add,
+        Neg,
+        Sub,
+    },
+    simd::{
+        LaneCount,
+        SupportedLaneCount,
+    },
+};
 
-/// Dual vector (batch version)
+use approx::{
+    AbsDiffEq,
+    RelativeEq,
+};
+
+use super::vector::{
+    HasJacobian,
+    VectorValuedDerivative,
+};
+use crate::{
+    dual::{
+        dual_batch_scalar::DualBatchScalar,
+        DualBatchMatrix,
+    },
+    linalg::{
+        BatchMask,
+        BatchMatF64,
+        BatchScalarF64,
+        BatchVecF64,
+        SMat,
+        SVec,
+    },
+    prelude::*,
+};
+
+/// A batch dual vector, whose elements are [DualBatchScalar] (forward-mode AD) across multiple
+/// lanes.
+///
+/// This implements vector functionality for `ℝʳ` *with* partial derivatives,
+/// in parallel lanes (SIMD). Each element is a `DualBatchScalar<BATCH, DM, DN>` storing:
+///
+/// - `BATCH`: The number of SIMD lanes.
+/// - `DM`, `DN`: The shape of each element’s derivative.
+///
+/// # Private fields
+/// - `inner`: A `ROWS`-dimensional [SVec], each item a [DualBatchScalar<DM, DN>].
+///
+/// # Example
+/// For `ROWS=3, BATCH=4, DM=3, DN=1`, you have 3 elements, each storing 4-lane real parts plus
+/// a 3×1 derivative for each lane, i.e. 4-lane forward-mode AD on a 3D input.
+///
+/// See [crate::dual::IsDualVector] for more details.
 #[derive(Clone, Copy, Debug)]
+#[cfg(feature = "simd")]
 pub struct DualBatchVector<const ROWS: usize, const BATCH: usize, const DM: usize, const DN: usize>
 where
     BatchScalarF64<BATCH>: IsCoreScalar,
@@ -54,6 +89,18 @@ where
             v[i] = self.inner[i].derivative();
         }
         VectorValuedDerivative { out_vec: v }
+    }
+}
+
+impl<const ROWS: usize, const BATCH: usize>
+    IsDualVectorFromCurve<DualBatchScalar<BATCH, 1, 1>, ROWS, BATCH>
+    for DualBatchVector<ROWS, BATCH, 1, 1>
+where
+    BatchScalarF64<BATCH>: IsCoreScalar,
+    LaneCount<BATCH>: SupportedLaneCount,
+{
+    fn curve_derivative(&self) -> BatchVecF64<ROWS, BATCH> {
+        self.jacobian()
     }
 }
 
@@ -200,15 +247,19 @@ where
     }
 
     fn norm(&self) -> DualBatchScalar<BATCH, DM, DN> {
-        self.clone().dot(*self).sqrt()
+        self.dot(*self).sqrt()
     }
 
     fn squared_norm(&self) -> DualBatchScalar<BATCH, DM, DN> {
-        self.clone().dot(*self)
+        self.dot(*self)
     }
 
-    fn get_elem(&self, idx: usize) -> DualBatchScalar<BATCH, DM, DN> {
+    fn elem(&self, idx: usize) -> DualBatchScalar<BATCH, DM, DN> {
         self.inner[idx]
+    }
+
+    fn elem_mut(&mut self, idx: usize) -> &mut DualBatchScalar<BATCH, DM, DN> {
+        &mut self.inner[idx]
     }
 
     fn from_array<A>(duals: A) -> Self
@@ -251,7 +302,7 @@ where
     fn real_vector(&self) -> BatchVecF64<ROWS, BATCH> {
         let mut r = BatchVecF64::<ROWS, BATCH>::zeros();
         for i in 0..ROWS {
-            r[i] = self.get_elem(i).real_part;
+            r[i] = self.elem(i).real_part;
         }
         r
     }
@@ -294,15 +345,14 @@ where
         let mut sum = <DualBatchScalar<BATCH, DM, DN>>::from_f64(0.0);
 
         for i in 0..ROWS {
-            sum += self.get_elem(i) * rhs.borrow().get_elem(i);
+            sum += self.elem(i) * rhs.borrow().elem(i);
         }
 
         sum
     }
 
     fn normalized(&self) -> Self {
-        self.clone()
-            .scaled(<DualBatchScalar<BATCH, DM, DN>>::from_f64(1.0) / self.norm())
+        self.scaled(<DualBatchScalar<BATCH, DM, DN>>::from_f64(1.0) / self.norm())
     }
 
     fn from_f64_array<A>(vals: A) -> Self
@@ -327,10 +377,6 @@ where
         }
     }
 
-    fn set_elem(&mut self, idx: usize, v: DualBatchScalar<BATCH, DM, DN>) {
-        self.inner[idx] = v;
-    }
-
     fn to_dual_const<const M: usize, const N: usize>(
         &self,
     ) -> <DualBatchScalar<BATCH, DM, DN> as IsScalar<BATCH, DM, DN>>::DualVector<ROWS, M, N> {
@@ -347,7 +393,7 @@ where
         let mut out = DualBatchMatrix::<ROWS, R2, BATCH, DM, DN>::zeros();
         for i in 0..ROWS {
             for j in 0..R2 {
-                out.set_elem([i, j], self.get_elem(i) * rhs.borrow().get_elem(j));
+                *out.elem_mut([i, j]) = self.elem(i) * rhs.borrow().elem(j);
             }
         }
         out
@@ -360,7 +406,7 @@ where
         let mut v = SVec::<DualBatchScalar<BATCH, DM, DN>, ROWS>::zeros();
         let other = other.borrow();
         for i in 0..ROWS {
-            v[i] = self.get_elem(i).select(mask, other.get_elem(i));
+            v[i] = self.elem(i).select(mask, other.elem(i));
         }
 
         Self { inner: v }

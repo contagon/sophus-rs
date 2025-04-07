@@ -1,10 +1,15 @@
-use sophus_autodiff::linalg::VecF64;
-use sophus_autodiff::manifold::IsVariable;
-
-use crate::lie_group::LieGroup;
-use crate::prelude::*;
-use crate::traits::IsLieGroupImpl;
 use core::fmt::Debug;
+
+use sophus_autodiff::{
+    linalg::VecF64,
+    manifold::IsVariable,
+};
+
+use crate::{
+    lie_group::LieGroup,
+    prelude::*,
+    IsLieGroupImpl,
+};
 
 extern crate alloc;
 
@@ -47,7 +52,7 @@ impl<
             + 'static,
     > IsVariable for LieGroup<f64, DOF, PARAMS, POINT, AMBIENT, 1, 0, 0, G>
 {
-    const DOF: usize = DOF;
+    const NUM_DOF: usize = DOF;
 
     fn update(&mut self, delta: nalgebra::DVectorView<f64>) {
         assert_eq!(delta.len(), DOF);
