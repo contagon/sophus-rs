@@ -148,6 +148,7 @@ impl PoseCircleProblem {
                 initial_lm_damping: 1.0,
                 parallelize: true,
                 solver,
+                ..Default::default()
             },
         )
         .unwrap();

@@ -75,6 +75,7 @@ impl NonLinearEqToyProblem {
                 initial_lm_damping: EPS_F64,
                 parallelize: true,
                 solver,
+                ..Default::default()
             },
         )
         .unwrap()

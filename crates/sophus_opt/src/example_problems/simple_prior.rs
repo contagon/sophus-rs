@@ -80,6 +80,7 @@ impl SimpleIso2PriorProblem {
                 initial_lm_damping: EPS_F64, // if lm prior param is tiny
                 parallelize: true,
                 solver,
+                ..Default::default()
             },
         )
         .unwrap();
